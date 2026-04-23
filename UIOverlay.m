@@ -13,8 +13,6 @@
 #define kDividerColor    [UIColor colorWithRed:0.9 green:0.9 blue:0.92 alpha:1.0]
 
 static CGFloat const kFloatingBtnSize = 44.0;
-static CGFloat const kPanelWidth = 340.0;
-static CGFloat const kPanelMaxHeight = 520.0;
 
 // ============================================================
 // UIOverlay 实现
