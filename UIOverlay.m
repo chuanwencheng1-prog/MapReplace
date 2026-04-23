@@ -400,27 +400,14 @@ static CGFloat const kFloatingBtnSize = 44.0;
     } completion:^(BOOL success, NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (success) {
-                stateLabel.text = @"✓ 下载完成，正在替换...";
+                // 下载完成并已自动替换                
+                stateLabel.text = @"✓ 已完成";
                 stateLabel.textColor = kSuccessColor;
+                sender.backgroundColor = kSuccessColor;
+                [sender setTitle:@"已应用" forState:UIControlStateNormal];
                 
-                // 自动替换
-                NSError __autoreleasing *replaceError = nil;
-                [[MapManager sharedManager] replaceMapWithType:type error:&replaceError];
-                
-                if (!replaceError) {
-                    stateLabel.text = @"✓ 已完成";
-                    sender.backgroundColor = kSuccessColor;
-                    [sender setTitle:@"已应用" forState:UIControlStateNormal];
-                    
-                    // 刷新其他按钮                    
-                    [self refreshAllButtons];
-                } else {
-                    stateLabel.text = [NSString stringWithFormat:@"✗ %@", replaceError.localizedDescription];
-                    stateLabel.textColor = [UIColor systemRedColor];
-                    sender.enabled = YES;
-                    sender.backgroundColor = kPrimaryColor;
-                    [sender setTitle:@"下载" forState:UIControlStateNormal];
-                }
+                // 刷新其他按钮                
+                [self refreshAllButtons];
             } else {
                 stateLabel.text = [NSString stringWithFormat:@"✗ 下载失败: %@", error.localizedDescription];
                 stateLabel.textColor = [UIColor systemRedColor];
