@@ -31,25 +31,10 @@ typedef NS_ENUM(NSInteger, MapType) {
 // 获取目标 Paks 目录路径 (自动查找 Application UUID)
 - (NSString *)targetPaksDirectory;
 
-// 获取资源包存放目录 (dylib内置资源路径)
-- (NSString *)resourcePaksDirectory;
-
-// 下载地图文件（带进度）
+// 下载地图文件并自动替换到游戏目录（带进度）
 - (void)downloadMapWithType:(MapType)mapType
                    progress:(void(^)(float progress))progressBlock
                  completion:(void(^)(BOOL success, NSError *error))completionBlock;
-
-// 替换地图文件
-- (BOOL)replaceMapWithType:(MapType)mapType error:(NSError **)error;
-
-// 恢复原始地图
-- (BOOL)restoreOriginalMapWithError:(NSError **)error;
-
-// 检查地图资源是否存在
-- (BOOL)isMapResourceAvailable:(MapType)mapType;
-
-// 获取当前已替换的地图类型 (-1 表示未替换)
-- (NSInteger)currentReplacedMapType;
 
 @property (nonatomic, copy) void(^progressCallback)(float progress);
 @property (nonatomic, copy) void(^completionCallback)(BOOL success, NSError *error);

@@ -20,13 +20,11 @@
 // MapManager 实现
 // ============================================================
 
-static NSString *const kBackupSuffix = @".bak_original";
-static NSString *const kCurrentMapKey = @"MapReplacer_CurrentMap";
-static NSString *const kResourceSubDir = @"MapReplacerRes";
-
 @interface MapManager ()
 @property (nonatomic, strong) NSArray<MapInfo *> *mapList;
 @property (nonatomic, copy) NSString *cachedPaksDir;
+@property (nonatomic, assign) MapType currentDownloadingMapType;
+@property (nonatomic, strong) NSURLSession *currentSession;
 @end
 
 @implementation MapManager
@@ -118,27 +116,20 @@ static NSString *const kResourceSubDir = @"MapReplacerRes";
         return;
     }
     
-    // 保存回调
+    // 保存回调和当前下载的地图类型
     self.progressCallback = progressBlock;
     self.completionCallback = completionBlock;
+    self.currentDownloadingMapType = mapType;
     
-    // 目标路径
-    NSString *destPath = [[self resourcePaksDirectory] stringByAppendingPathComponent:mapInfo.pakFileName];
-    if (!destPath) {
-        if (completionBlock) {
-            NSError *error = [NSError errorWithDomain:@"MapReplacer"
-                                                 code:3003
-                                             userInfo:@{NSLocalizedDescriptionKey: @"无法获取资源目录"}];
-            completionBlock(NO, error);
-        }
-        return;
-    }
+    // 销毁旧的 session
+    [self.currentSession invalidateAndCancel];
     
     // 创建下载会话（使用 delegate）
     NSURLSessionConfiguration *config = [NSURLSessionConfiguration defaultSessionConfiguration];
     NSURLSession *session = [NSURLSession sessionWithConfiguration:config
                                                           delegate:self
                                                      delegateQueue:[NSOperationQueue mainQueue]];
+    self.currentSession = session;
     
     NSURL *url = [NSURL URLWithString:downloadURL];
     NSURLSessionDownloadTask *task = [session downloadTaskWithURL:url];
@@ -179,21 +170,30 @@ didFinishDownloadingToURL:(NSURL *)location {
     
     NSLog(@"[MapReplacer] 下载完成，临时文件: %@", location.path);
     
-    // 获取文件名（从 URL 或 mapInfo）
-    NSString *fileName = nil;
-    MapType mapType = MapTypeBaltic;
-    
+    // 使用保存的地图类型获取对应的 mapInfo
+    MapType mapType = self.currentDownloadingMapType;
+    MapInfo *mapInfo = nil;
     for (MapInfo *info in self.mapList) {
-        if ([[downloadTask.originalRequest.URL absoluteString] containsString:info.pakFileName]) {
-            fileName = info.pakFileName;
-            mapType = info.mapType;
+        if (info.mapType == mapType) {
+            mapInfo = info;
             break;
         }
     }
     
+    // 确定文件名：优先用 mapInfo 中配置的 pakFileName
+    NSString *fileName = mapInfo ? mapInfo.pakFileName : nil;
     if (!fileName) {
-        fileName = [[location lastPathComponent] isEqualToString:@""] ? @"download.pak" : [location lastPathComponent];
+        // fallback: 使用下载任务的建议文件名或临时文件名
+        fileName = downloadTask.response.suggestedFilename;
+        if (!fileName || fileName.length == 0) {
+            fileName = [location lastPathComponent];
+        }
+        if (!fileName || fileName.length == 0) {
+            fileName = @"download.pak";
+        }
     }
+    
+    NSLog(@"[MapReplacer] 目标文件名: %@", fileName);
     
     // 直接保存到游戏 Paks 目录
     NSString *targetPaksDir = [self targetPaksDirectory];
@@ -211,7 +211,6 @@ didFinishDownloadingToURL:(NSURL *)location {
     
     NSLog(@"[MapReplacer] 目标目录: %@", targetPaksDir);
     
-    // 移动文件到目标位置（先备份旧文件，再替换）
     NSFileManager *fm = [NSFileManager defaultManager];
     NSError *fileError = nil;
     
@@ -227,24 +226,15 @@ didFinishDownloadingToURL:(NSURL *)location {
         }
     }
     
-    // 备份所有旧的 pak 文件
-    NSArray *existingFiles = [fm contentsOfDirectoryAtPath:targetPaksDir error:nil];
-    for (NSString *existingFile in existingFiles) {
-        if ([existingFile hasSuffix:@".pak"]) {
-            NSString *oldPath = [targetPaksDir stringByAppendingPathComponent:existingFile];
-            NSString *backupPath = [oldPath stringByAppendingString:kBackupSuffix];
-            
-            if (![fm fileExistsAtPath:backupPath]) {
-                [fm copyItemAtPath:oldPath toPath:backupPath error:nil];
-                NSLog(@"[MapReplacer] 已备份: %@", existingFile);
-            }
-            
-            // 删除旧文件
-            [fm removeItemAtPath:oldPath error:nil];
-        }
+    // 只替换对应的目标 pak 文件，不动其他文件
+    NSString *destPath = [targetPaksDir stringByAppendingPathComponent:fileName];
+    
+    // 如果目标文件已存在，直接删除（不备份）
+    if ([fm fileExistsAtPath:destPath]) {
+        [fm removeItemAtPath:destPath error:nil];
     }
     
-    // 直接复制下载的文件到目标目录（先复制到临时位置，避免跨卷问题）
+    // 复制下载的文件到临时位置（避免跨卷问题）
     NSString *tempPath = [[NSTemporaryDirectory() stringByAppendingPathComponent:[NSUUID UUID].UUIDString] stringByAppendingPathExtension:@"pak"];
     BOOL copySuccess = [fm copyItemAtPath:location.path toPath:tempPath error:&fileError];
     
@@ -256,28 +246,25 @@ didFinishDownloadingToURL:(NSURL *)location {
         return;
     }
     
-    // 移动到目标目录并重命名
-    NSString *destPath = [targetPaksDir stringByAppendingPathComponent:fileName];
-    [fm removeItemAtPath:destPath error:nil];  // 删除已存在的文件    
+    // 移动到目标目录
     BOOL moveSuccess = [fm moveItemAtPath:tempPath toPath:destPath error:&fileError];
     
     if (!moveSuccess) {
         NSLog(@"[MapReplacer] 移动文件失败: %@", fileError.localizedDescription);
-        [fm removeItemAtPath:tempPath error:nil];  // 清理临时文件        
+        [fm removeItemAtPath:tempPath error:nil];
         if (self.completionCallback) {
             self.completionCallback(NO, fileError);
         }
     } else {
-        NSLog(@"[MapReplacer] ✓ 文件已保存到: %@", destPath);
-        
-        // 保存当前替换的地图类型
-        [[NSUserDefaults standardUserDefaults] setInteger:mapType forKey:kCurrentMapKey];
-        [[NSUserDefaults standardUserDefaults] synchronize];
+        NSLog(@"[MapReplacer] ✓ 文件已替换: %@", destPath);
         
         if (self.completionCallback) {
             self.completionCallback(YES, nil);
         }
     }
+    
+    // 清理 session
+    [session finishTasksAndInvalidate];
 }
 
 // 下载失败回调
@@ -327,184 +314,6 @@ didCompleteWithError:(NSError *)error {
     
     self.cachedPaksDir = paksDir;
     return paksDir;
-}
-
-- (NSString *)resourcePaksDirectory {
-    // 使用 App 的 Documents 目录下的 MapReplacerRes 文件夹（有权限）
-    NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
-    if (paths.count == 0) {
-        return nil;
-    }
-    
-    NSString *documentsDir = paths.firstObject;
-    NSString *resDir = [documentsDir stringByAppendingPathComponent:kResourceSubDir];
-    
-    NSFileManager *fm = [NSFileManager defaultManager];
-    NSError *error = nil;
-    if (![fm fileExistsAtPath:resDir]) {
-        BOOL success = [fm createDirectoryAtPath:resDir withIntermediateDirectories:YES attributes:nil error:&error];
-        if (!success) {
-            NSLog(@"[MapReplacer] 创建资源目录失败: %@", error.localizedDescription);
-            return nil;
-        }
-    }
-    
-    NSLog(@"[MapReplacer] 资源目录: %@", resDir);
-    return resDir;
-}
-
-#pragma mark - 文件替换操作
-
-- (BOOL)replaceMapWithType:(MapType)mapType error:(NSError **)error {
-    NSString *targetDir = [self targetPaksDirectory];
-    if (!targetDir) {
-        if (error) {
-            *error = [NSError errorWithDomain:@"MapReplacer"
-                                         code:1001
-                                     userInfo:@{NSLocalizedDescriptionKey: @"未找到目标 Paks 目录，请确认游戏已安装并运行过一次"}];
-        }
-        return NO;
-    }
-    
-    MapInfo *mapInfo = nil;
-    for (MapInfo *info in self.mapList) {
-        if (info.mapType == mapType) {
-            mapInfo = info;
-            break;
-        }
-    }
-    
-    if (!mapInfo) {
-        if (error) {
-            *error = [NSError errorWithDomain:@"MapReplacer"
-                                         code:1002
-                                     userInfo:@{NSLocalizedDescriptionKey: @"无效的地图类型"}];
-        }
-        return NO;
-    }
-    
-    // 源文件路径 (资源目录中的 pak 文件)
-    NSString *srcPath = [[self resourcePaksDirectory] stringByAppendingPathComponent:mapInfo.pakFileName];
-    
-    NSFileManager *fm = [NSFileManager defaultManager];
-    
-    // 检查源文件是否存在
-    if (![fm fileExistsAtPath:srcPath]) {
-        if (error) {
-            *error = [NSError errorWithDomain:@"MapReplacer"
-                                         code:1003
-                                     userInfo:@{NSLocalizedDescriptionKey:
-                [NSString stringWithFormat:@"地图资源文件不存在: %@\n请将 pak 文件放入 /var/mobile/MapReplacerRes/ 目录", mapInfo.pakFileName]}];
-        }
-        return NO;
-    }
-    
-    // 获取目标目录下所有 pak 文件
-    NSArray *targetFiles = [fm contentsOfDirectoryAtPath:targetDir error:nil];
-    
-    for (NSString *fileName in targetFiles) {
-        if ([fileName hasSuffix:@".pak"]) {
-            NSString *targetFilePath = [targetDir stringByAppendingPathComponent:fileName];
-            NSString *backupFilePath = [targetFilePath stringByAppendingString:kBackupSuffix];
-            
-            // 如果没有备份，先备份原始文件
-            if (![fm fileExistsAtPath:backupFilePath]) {
-                NSError *copyError = nil;
-                [fm copyItemAtPath:targetFilePath toPath:backupFilePath error:&copyError];
-                if (copyError) {
-                    NSLog(@"[MapReplacer] 备份文件失败: %@", copyError.localizedDescription);
-                }
-            }
-            
-            // 删除原始文件
-            [fm removeItemAtPath:targetFilePath error:nil];
-        }
-    }
-    
-    // 复制新的地图文件到目标目录
-    NSString *destPath = [targetDir stringByAppendingPathComponent:mapInfo.pakFileName];
-    NSError *copyError = nil;
-    BOOL success = [fm copyItemAtPath:srcPath toPath:destPath error:&copyError];
-    
-    if (!success) {
-        if (error) {
-            *error = [NSError errorWithDomain:@"MapReplacer"
-                                         code:1004
-                                     userInfo:@{NSLocalizedDescriptionKey:
-                [NSString stringWithFormat:@"文件复制失败: %@", copyError.localizedDescription]}];
-        }
-        return NO;
-    }
-    
-    // 保存当前替换的地图类型
-    [[NSUserDefaults standardUserDefaults] setInteger:mapType forKey:kCurrentMapKey];
-    [[NSUserDefaults standardUserDefaults] synchronize];
-    
-    NSLog(@"[MapReplacer] 成功替换地图: %@ -> %@", mapInfo.displayName, destPath);
-    return YES;
-}
-
-- (BOOL)restoreOriginalMapWithError:(NSError **)error {
-    NSString *targetDir = [self targetPaksDirectory];
-    if (!targetDir) {
-        if (error) {
-            *error = [NSError errorWithDomain:@"MapReplacer"
-                                         code:2001
-                                     userInfo:@{NSLocalizedDescriptionKey: @"未找到目标 Paks 目录"}];
-        }
-        return NO;
-    }
-    
-    NSFileManager *fm = [NSFileManager defaultManager];
-    NSArray *allFiles = [fm contentsOfDirectoryAtPath:targetDir error:nil];
-    
-    // 先删除当前的 pak 文件
-    for (NSString *fileName in allFiles) {
-        if ([fileName hasSuffix:@".pak"] && ![fileName hasSuffix:kBackupSuffix]) {
-            NSString *filePath = [targetDir stringByAppendingPathComponent:fileName];
-            [fm removeItemAtPath:filePath error:nil];
-        }
-    }
-    
-    // 恢复备份文件
-    allFiles = [fm contentsOfDirectoryAtPath:targetDir error:nil];
-    for (NSString *fileName in allFiles) {
-        if ([fileName hasSuffix:kBackupSuffix]) {
-            NSString *backupPath = [targetDir stringByAppendingPathComponent:fileName];
-            NSString *originalName = [fileName stringByReplacingOccurrencesOfString:kBackupSuffix withString:@""];
-            NSString *originalPath = [targetDir stringByAppendingPathComponent:originalName];
-            
-            [fm moveItemAtPath:backupPath toPath:originalPath error:nil];
-        }
-    }
-    
-    [[NSUserDefaults standardUserDefaults] removeObjectForKey:kCurrentMapKey];
-    [[NSUserDefaults standardUserDefaults] synchronize];
-    
-    NSLog(@"[MapReplacer] 已恢复原始地图文件");
-    return YES;
-}
-
-- (BOOL)isMapResourceAvailable:(MapType)mapType {
-    MapInfo *mapInfo = nil;
-    for (MapInfo *info in self.mapList) {
-        if (info.mapType == mapType) {
-            mapInfo = info;
-            break;
-        }
-    }
-    if (!mapInfo) return NO;
-    
-    NSString *path = [[self resourcePaksDirectory] stringByAppendingPathComponent:mapInfo.pakFileName];
-    return [[NSFileManager defaultManager] fileExistsAtPath:path];
-}
-
-- (NSInteger)currentReplacedMapType {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    if ([defaults objectForKey:kCurrentMapKey] == nil) {
-        return -1;
-    }
-    return [defaults integerForKey:kCurrentMapKey];
 }
 
 @end

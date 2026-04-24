@@ -40,9 +40,6 @@ static void initializePlugin(void) {
         NSLog(@"[MapReplacer] 警告: 未找到目标 Paks 目录");
     }
     
-    NSString *resDir = [manager resourcePaksDirectory];
-    NSLog(@"[MapReplacer] 资源目录: %@", resDir);
-    
     // 显示悬浮按钮
     [[UIOverlay sharedOverlay] showFloatingButton];
     
@@ -100,14 +97,6 @@ static void mapreplacer_ctor(void) {
     NSLog(@"[MapReplacer]  地图替换插件 v1.0.0 已注入");
     NSLog(@"[MapReplacer]  Target: ShadowTrackerExtra");
     NSLog(@"[MapReplacer] ============================================");
-    
-    // 确保资源目录存在
-    NSFileManager *fm = [NSFileManager defaultManager];
-    NSString *resDir = @"/var/mobile/MapReplacerRes";
-    if (![fm fileExistsAtPath:resDir]) {
-        [fm createDirectoryAtPath:resDir withIntermediateDirectories:YES attributes:nil error:nil];
-        NSLog(@"[MapReplacer] 已创建资源目录: %@", resDir);
-    }
     
     // 延迟执行 Hook，等待运行时类加载完毕
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
