@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-#  MapReplacer 编译与安装脚本
+#  MapReplacer-Standalone 编译与安装脚本
 #  需要在已安装 Theos 的环境中运行
 # ============================================================
 
@@ -10,7 +10,7 @@ export THEOS_DEVICE_IP=YOUR_DEVICE_IP
 export THEOS_DEVICE_PORT=22
 
 echo "======================================"
-echo "  MapReplacer 编译脚本"
+echo "  MapReplacer IPA 编译脚本"
 echo "======================================"
 
 # 清理旧编译文件
@@ -35,13 +35,14 @@ if [ "$confirm" = "y" ]; then
     make install
     echo "✅ 安装完成！"
 else
-    echo "已跳过安装。deb包位于 packages/ 目录。"
+    echo "已跳过安装。.deb包位于 packages/ 目录。"
 fi
 
 echo ""
 echo "======================================"
 echo "  使用说明："
-echo "  1. 将 pak 文件放入 /var/mobile/MapReplacerRes/"
-echo "  2. 打开游戏，点击 MAP 悬浮按钮"
-echo "  3. 选择要替换的地图并确认"
+echo "  1. 在越狱设备上安装 .deb 包"
+echo "  2. 打开 MapReplacer 应用"
+echo "  3. 点击悬浮按钮打开地图面板"
+echo "  4. 选择并下载地图资源"
 echo "======================================"

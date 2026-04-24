@@ -1,18 +1,15 @@
-INSTALL_TARGET_PROCESSES = ShadowTrackerExtra
+THEOS_DEVICE_IP = 
 ARCHS = arm64 arm64e
+TARGET = iphone::9.0:14.5
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = MapReplacer
+APPLICATION_NAME = MapReplacer
 
-# 使用纯 ObjC 文件 (不需要 Logos 预处理器)
-MapReplacer_FILES = Tweak.m MapManager.m UIOverlay.m
+MapReplacer_FILES = Classes/AppDelegate.m Classes/MapManager.m Classes/UIOverlay.m
 MapReplacer_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
 MapReplacer_FRAMEWORKS = UIKit Foundation
-MapReplacer_PRIVATE_FRAMEWORKS =
-MapReplacer_LIBRARIES = substrate
+MapReplacer_CODESIGN_FLAGS = -Sentitlements.xml
+MapReplacer_INSTALL_PATH = /Applications
 
-include $(THEOS_MAKE_PATH)/tweak.mk
-
-after-install::
-	install.exec "killall -9 ShadowTrackerExtra" || true
+include $(THEOS_MAKE_PATH)/application.mk
