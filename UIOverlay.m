@@ -250,7 +250,7 @@ static CGFloat const kFloatingBtnSize = 44.0;
     
     // 标题
     UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(padding, 15, panelWidth - 80, 30)];
-    titleLabel.text = @"地图资源管理器";
+    titleLabel.text = @"超凡";
     titleLabel.textColor = kTextPrimary;
     titleLabel.font = [UIFont systemFontOfSize:20 weight:UIFontWeightSemibold];
     [headerView addSubview:titleLabel];
