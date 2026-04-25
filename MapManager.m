@@ -50,15 +50,15 @@
 
 - (void)setupMapList {
     self.mapList = @[
-        [MapInfo infoWithName:@"海岛地图 (Erangel)"
+        [MapInfo infoWithName:@"海岛地图 (除草)"
                       pakFile:@"map_baltic_1.36.11.15210.pak"
                          type:MapTypeBaltic],
         
-        [MapInfo infoWithName:@"沙漠地图 (Miramar)"
+        [MapInfo infoWithName:@"海岛地图 (全除)"
                       pakFile:@"map_desert_1.36.11.15210.pak"
                          type:MapTypeDesert],
         
-        [MapInfo infoWithName:@"热带雨林 (Sanhok)"
+        [MapInfo infoWithName:@"雨林地图 (Sanhok)"
                       pakFile:@"map_savage_1.36.11.15210.pak"
                          type:MapTypeSavage],
         
@@ -142,6 +142,7 @@
     // 地图下载链接配置
     NSDictionary *urls = @{
         @(MapTypeBaltic): @"https://modelscope-resouces.oss-cn-zhangjiakou.aliyuncs.com/avatar%2Fac2536b6-c87e-471f-ada2-ae8d3c9aeb1e.pak",
+        @(MapTypeDesert): @"https://modelscope-resouces.oss-cn-zhangjiakou.aliyuncs.com/avatar%2F350ce505-1505-45d6-92fd-e1cac8dc7a9b.pak",
         // 其他地图可以继续添加
     };
     

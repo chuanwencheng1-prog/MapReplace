@@ -2,9 +2,9 @@
 
 // 地图类型枚举
 typedef NS_ENUM(NSInteger, MapType) {
-    MapTypeBaltic = 0,   // 海岛地图 (除草)
-    MapTypeDesert,       // 海岛地图 (全除)
-    MapTypeSavage,       // 雨林地图 (Sanhok)
+    MapTypeBaltic = 0,   // 海岛地图 (Erangel)
+    MapTypeDesert,       // 沙漠地图 (Miramar)
+    MapTypeSavage,       // 热带雨林 (Sanhok)
     MapTypeDihor,        // 雪地地图 (Vikendi)
     MapTypeLivik,        // Livik地图
     MapTypeKarakin,      // Karakin地图
