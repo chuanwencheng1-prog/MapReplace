@@ -20,8 +20,8 @@ typedef NS_ENUM(NSInteger, MapType) {
 + (instancetype)infoWithName:(NSString *)name pakFile:(NSString *)pakFile type:(MapType)type;
 @end
 
-// 地图管理器
-@interface MapManager : NSObject <NSURLSessionDownloadDelegate>
+// 地图管理器 - 使用 DataTask + 手动写文件，兼容所有设备
+@interface MapManager : NSObject <NSURLSessionDataDelegate>
 
 + (instancetype)sharedManager;
 
