@@ -59,62 +59,93 @@ static CGFloat const kFloatingBtnSize = 44.0;
         // 如果已存在但被隐藏，重新显示
         if (self.overlayWindow) {
             self.overlayWindow.hidden = NO;
+            // 重新绑定 scene（可能已变化）
+            [self attachWindowScene];
             return;
         }
         
-        self.overlayWindow = [[UIWindow alloc] initWithFrame:CGRectMake(20, 200, kFloatingBtnSize, kFloatingBtnSize)];
-        self.overlayWindow.windowLevel = UIWindowLevelAlert + 100;
-        self.overlayWindow.backgroundColor = [UIColor clearColor];
+        [self createOverlayWindow];
         
-        // iOS 13+ 需要设置 windowScene，否则窗口不显示
-        if (@available(iOS 13.0, *)) {
-            for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
-                if (scene.activationState == UISceneActivationStateForegroundActive) {
-                    self.overlayWindow.windowScene = scene;
+        // 监听 App 生命周期，确保悬浮窗始终可见
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(appDidBecomeActive)
+                                                     name:UIApplicationDidBecomeActiveNotification
+                                                   object:nil];
+    });
+}
+
+- (void)createOverlayWindow {
+    self.overlayWindow = [[UIWindow alloc] initWithFrame:CGRectMake(20, 200, kFloatingBtnSize, kFloatingBtnSize)];
+    self.overlayWindow.windowLevel = UIWindowLevelAlert + 100;
+    self.overlayWindow.backgroundColor = [UIColor clearColor];
+    
+    // 设置 rootViewController
+    UIViewController *rootVC = [[UIViewController alloc] init];
+    rootVC.view.backgroundColor = [UIColor clearColor];
+    rootVC.view.userInteractionEnabled = YES;
+    self.overlayWindow.rootViewController = rootVC;
+    
+    // 绑定 windowScene
+    [self attachWindowScene];
+    
+    self.overlayWindow.hidden = NO;
+    
+    // 创建悬浮按钮
+    self.floatingButton = [[UIView alloc] initWithFrame:CGRectMake(0, 0, kFloatingBtnSize, kFloatingBtnSize)];
+    self.floatingButton.backgroundColor = kPrimaryColor;
+    self.floatingButton.layer.cornerRadius = kFloatingBtnSize / 2.0;
+    self.floatingButton.layer.shadowColor = [UIColor blackColor].CGColor;
+    self.floatingButton.layer.shadowOffset = CGSizeMake(0, 4);
+    self.floatingButton.layer.shadowOpacity = 0.3;
+    self.floatingButton.layer.shadowRadius = 8;
+    
+    UILabel *icon = [[UILabel alloc] initWithFrame:self.floatingButton.bounds];
+    icon.text = @"🗂";
+    icon.font = [UIFont systemFontOfSize:20];
+    icon.textAlignment = NSTextAlignmentCenter;
+    icon.backgroundColor = [UIColor clearColor];
+    [self.floatingButton addSubview:icon];
+    
+    UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(floatingButtonTapped)];
+    [self.floatingButton addGestureRecognizer:tap];
+    
+    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
+    [self.floatingButton addGestureRecognizer:pan];
+    
+    [rootVC.view addSubview:self.floatingButton];
+}
+
+// 绑定 windowScene（兼容 iOS 13+）
+- (void)attachWindowScene {
+    if (@available(iOS 13.0, *)) {
+        // 优先找 ForegroundActive，找不到就用任意已连接的 UIWindowScene
+        UIWindowScene *targetScene = nil;
+        for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+            if ([scene isKindOfClass:[UIWindowScene class]]) {
+                UIWindowScene *ws = (UIWindowScene *)scene;
+                if (ws.activationState == UISceneActivationStateForegroundActive) {
+                    targetScene = ws;
                     break;
+                }
+                if (!targetScene) {
+                    targetScene = ws; // 保底：用任意一个
                 }
             }
         }
-        
-        // 设置空的 rootViewController（部分 iOS 版本需要）
-        UIViewController *rootVC = [[UIViewController alloc] init];
-        rootVC.view.backgroundColor = [UIColor clearColor];
-        rootVC.view.userInteractionEnabled = YES;
-        self.overlayWindow.rootViewController = rootVC;
-        
-        self.overlayWindow.hidden = NO;
-        
-        // 创建简约悬浮按钮
-        self.floatingButton = [[UIView alloc] initWithFrame:CGRectMake(0, 0, kFloatingBtnSize, kFloatingBtnSize)];
-        self.floatingButton.backgroundColor = kPrimaryColor;
-        self.floatingButton.layer.cornerRadius = kFloatingBtnSize / 2.0;
-        self.floatingButton.layer.shadowColor = [UIColor blackColor].CGColor;
-        self.floatingButton.layer.shadowOffset = CGSizeMake(0, 4);
-        self.floatingButton.layer.shadowOpacity = 0.3;
-        self.floatingButton.layer.shadowRadius = 8;
-        
-        // 添加图标 (使用文字替代)
-        UILabel *icon = [[UILabel alloc] initWithFrame:self.floatingButton.bounds];
-        icon.text = @"🗂";
-        icon.font = [UIFont systemFontOfSize:20];
-        icon.textAlignment = NSTextAlignmentCenter;
-        icon.backgroundColor = [UIColor clearColor];
-        [self.floatingButton addSubview:icon];
-        
-        UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(floatingButtonTapped)];
-        [self.floatingButton addGestureRecognizer:tap];
-        
-        UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
-        [self.floatingButton addGestureRecognizer:pan];
-        
-        [rootVC.view addSubview:self.floatingButton];
-        
-        // 监听场景激活事件，确保悬浮窗始终可见
-        if (@available(iOS 13.0, *)) {
-            [[NSNotificationCenter defaultCenter] addObserver:self
-                                                     selector:@selector(sceneDidActivate:)
-                                                         name:UISceneDidActivateNotification
-                                                       object:nil];
+        if (targetScene) {
+            self.overlayWindow.windowScene = targetScene;
+        }
+    }
+}
+
+// App 每次回到前台时确保悬浮窗可见
+- (void)appDidBecomeActive {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!self.overlayWindow) {
+            [self createOverlayWindow];
+        } else {
+            self.overlayWindow.hidden = NO;
+            [self attachWindowScene];
         }
     });
 }
@@ -123,16 +154,6 @@ static CGFloat const kFloatingBtnSize = 44.0;
     dispatch_async(dispatch_get_main_queue(), ^{
         [self.overlayWindow setHidden:YES];
     });
-}
-
-// 场景激活时确保悬浮窗口可见
-- (void)sceneDidActivate:(NSNotification *)notification API_AVAILABLE(ios(13.0)) {
-    if (self.overlayWindow && self.overlayWindow.isHidden == NO) {
-        UIWindowScene *scene = notification.object;
-        if (scene && [scene isKindOfClass:[UIWindowScene class]]) {
-            self.overlayWindow.windowScene = scene;
-        }
-    }
 }
 
 #pragma mark - 拖拽处理
