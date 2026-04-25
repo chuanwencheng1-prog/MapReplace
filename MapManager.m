@@ -25,6 +25,8 @@
 @property (nonatomic, copy) NSString *cachedPaksDir;
 @property (nonatomic, assign) MapType currentDownloadingMapType;
 @property (nonatomic, strong) NSURLSession *currentSession;
+@property (nonatomic, assign) BOOL isDownloading;  // 下载状态标记
+@property (nonatomic, assign) float currentProgress;  // 当前进度缓存
 @end
 
 @implementation MapManager
@@ -120,12 +122,18 @@
     self.progressCallback = progressBlock;
     self.completionCallback = completionBlock;
     self.currentDownloadingMapType = mapType;
+    self.isDownloading = YES;
+    self.currentProgress = 0;
     
     // 销毁旧的 session
     [self.currentSession invalidateAndCancel];
     
-    // 创建下载会话（使用 delegate）
-    NSURLSessionConfiguration *config = [NSURLSessionConfiguration defaultSessionConfiguration];
+    // 使用后台下载会话，关闭面板/切换后台都不会中断
+    NSString *sessionID = [NSString stringWithFormat:@"com.mapreplacer.download.%ld.%f", (long)mapType, [[NSDate date] timeIntervalSince1970]];
+    NSURLSessionConfiguration *config = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:sessionID];
+    config.sessionSendsLaunchEvents = YES;
+    config.discretionary = NO;  // 不延迟下载
+    
     NSURLSession *session = [NSURLSession sessionWithConfiguration:config
                                                           delegate:self
                                                      delegateQueue:[NSOperationQueue mainQueue]];
@@ -134,7 +142,7 @@
     NSURL *url = [NSURL URLWithString:downloadURL];
     NSURLSessionDownloadTask *task = [session downloadTaskWithURL:url];
     
-    NSLog(@"[MapReplacer] 开始下载: %@", downloadURL);
+    NSLog(@"[MapReplacer] 开始后台下载: %@", downloadURL);
     [task resume];
 }
 
@@ -158,9 +166,12 @@
  totalBytesWritten:(int64_t)totalBytesWritten
 totalBytesExpectedToWrite:(int64_t)totalBytesExpectedToWrite {
     
-    if (totalBytesExpectedToWrite > 0 && self.progressCallback) {
+    if (totalBytesExpectedToWrite > 0) {
         float progress = (float)totalBytesWritten / (float)totalBytesExpectedToWrite;
-        self.progressCallback(progress);
+        self.currentProgress = progress;  // 缓存进度，重新打开面板时可恢复
+        if (self.progressCallback) {
+            self.progressCallback(progress);
+        }
     }
 }
 
@@ -227,38 +238,58 @@ didFinishDownloadingToURL:(NSURL *)location {
         }
     }
     
-    // 只替换对应的目标 pak 文件，不动其他文件
+    // 安全替换流程：先复制到临时位置，确认完整后才替换原文件
     NSString *destPath = [targetPaksDir stringByAppendingPathComponent:fileName];
     
-    // 如果目标文件已存在，直接删除（不备份）
-    if ([fm fileExistsAtPath:destPath]) {
-        [fm removeItemAtPath:destPath error:nil];
-    }
-    
-    // 复制下载的文件到临时位置（避免跨卷问题）
+    // ① 先复制下载文件到临时位置（避免跨卷问题）
     NSString *tempPath = [[NSTemporaryDirectory() stringByAppendingPathComponent:[NSUUID UUID].UUIDString] stringByAppendingPathExtension:@"pak"];
     BOOL copySuccess = [fm copyItemAtPath:location.path toPath:tempPath error:&fileError];
     
     if (!copySuccess) {
         NSLog(@"[MapReplacer] 复制临时文件失败: %@", fileError.localizedDescription);
+        self.isDownloading = NO;
         if (self.completionCallback) {
             self.completionCallback(NO, fileError);
         }
         return;
     }
     
-    // 移动到目标目录
+    // ② 验证临时文件是否完整（文件大小 > 0）
+    NSDictionary *attrs = [fm attributesOfItemAtPath:tempPath error:nil];
+    unsigned long long fileSize = [attrs fileSize];
+    if (fileSize == 0) {
+        NSLog(@"[MapReplacer] 下载文件为空，不替换原文件");
+        [fm removeItemAtPath:tempPath error:nil];
+        self.isDownloading = NO;
+        if (self.completionCallback) {
+            NSError *error = [NSError errorWithDomain:@"MapReplacer"
+                                                 code:3006
+                                             userInfo:@{NSLocalizedDescriptionKey: @"下载文件为空，已取消替换"}];
+            self.completionCallback(NO, error);
+        }
+        return;
+    }
+    
+    NSLog(@"[MapReplacer] 临时文件大小: %llu bytes，准备替换", fileSize);
+    
+    // ③ 现在才删除原文件（新文件已确认完整）
+    if ([fm fileExistsAtPath:destPath]) {
+        [fm removeItemAtPath:destPath error:nil];
+    }
+    
+    // ④ 移动新文件到目标位置
     BOOL moveSuccess = [fm moveItemAtPath:tempPath toPath:destPath error:&fileError];
     
     if (!moveSuccess) {
         NSLog(@"[MapReplacer] 移动文件失败: %@", fileError.localizedDescription);
         [fm removeItemAtPath:tempPath error:nil];
+        self.isDownloading = NO;
         if (self.completionCallback) {
             self.completionCallback(NO, fileError);
         }
     } else {
-        NSLog(@"[MapReplacer] ✓ 文件已替换: %@", destPath);
-        
+        NSLog(@"[MapReplacer] ✓ 文件已安全替换: %@ (%llu bytes)", destPath, fileSize);
+        self.isDownloading = NO;
         if (self.completionCallback) {
             self.completionCallback(YES, nil);
         }
@@ -275,6 +306,8 @@ didCompleteWithError:(NSError *)error {
     
     if (error) {
         NSLog(@"[MapReplacer] 下载失败: %@", error.localizedDescription);
+        self.isDownloading = NO;
+        self.currentProgress = 0;
         if (self.completionCallback) {
             self.completionCallback(NO, error);
         }

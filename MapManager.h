@@ -39,4 +39,9 @@ typedef NS_ENUM(NSInteger, MapType) {
 @property (nonatomic, copy) void(^progressCallback)(float progress);
 @property (nonatomic, copy) void(^completionCallback)(BOOL success, NSError *error);
 
+// 下载状态查询（用于 UI 恢复）
+@property (nonatomic, readonly) BOOL isDownloading;
+@property (nonatomic, readonly) float currentProgress;
+@property (nonatomic, readonly) MapType currentDownloadingMapType;
+
 @end

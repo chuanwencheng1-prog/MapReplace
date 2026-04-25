@@ -59,18 +59,38 @@ static CGFloat const kFloatingBtnSize = 44.0;
         // 如果已存在但被隐藏，重新显示
         if (self.overlayWindow) {
             self.overlayWindow.hidden = NO;
-            // 重新绑定 scene（可能已变化）
             [self attachWindowScene];
+            // 确保在最前面
+            self.overlayWindow.windowLevel = UIWindowLevelAlert + 100;
             return;
         }
         
         [self createOverlayWindow];
         
-        // 监听 App 生命周期，确保悬浮窗始终可见
-        [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(appDidBecomeActive)
-                                                     name:UIApplicationDidBecomeActiveNotification
-                                                   object:nil];
+        // 监听多种生命周期事件，确保悬浮窗始终可见
+        NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
+        
+        // 传统 App 生命周期
+        [nc addObserver:self
+               selector:@selector(appWillEnterForeground)
+                   name:UIApplicationWillEnterForegroundNotification
+                 object:nil];
+        [nc addObserver:self
+               selector:@selector(appDidBecomeActive)
+                   name:UIApplicationDidBecomeActiveNotification
+                 object:nil];
+        
+        // iOS 13+ Scene 生命周期（更可靠）
+        if (@available(iOS 13.0, *)) {
+            [nc addObserver:self
+                   selector:@selector(sceneDidActivate:)
+                       name:UISceneDidActivateNotification
+                     object:nil];
+            [nc addObserver:self
+                   selector:@selector(sceneWillEnterForeground:)
+                       name:UISceneWillEnterForegroundNotification
+                     object:nil];
+        }
     });
 }
 
@@ -118,36 +138,72 @@ static CGFloat const kFloatingBtnSize = 44.0;
 // 绑定 windowScene（兼容 iOS 13+）
 - (void)attachWindowScene {
     if (@available(iOS 13.0, *)) {
-        // 优先找 ForegroundActive，找不到就用任意已连接的 UIWindowScene
-        UIWindowScene *targetScene = nil;
+        // 优先找 ForegroundActive，其次 ForegroundInactive，保底用任意已连接的
+        UIWindowScene *activeScene = nil;
+        UIWindowScene *inactiveScene = nil;
+        UIWindowScene *anyScene = nil;
+        
         for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
             if ([scene isKindOfClass:[UIWindowScene class]]) {
                 UIWindowScene *ws = (UIWindowScene *)scene;
                 if (ws.activationState == UISceneActivationStateForegroundActive) {
-                    targetScene = ws;
+                    activeScene = ws;
                     break;
+                } else if (ws.activationState == UISceneActivationStateForegroundInactive) {
+                    inactiveScene = ws;
                 }
-                if (!targetScene) {
-                    targetScene = ws; // 保底：用任意一个
+                if (!anyScene) {
+                    anyScene = ws;
                 }
             }
         }
-        if (targetScene) {
+        
+        UIWindowScene *targetScene = activeScene ?: inactiveScene ?: anyScene;
+        if (targetScene && self.overlayWindow.windowScene != targetScene) {
             self.overlayWindow.windowScene = targetScene;
+            NSLog(@"[MapReplacer] 已绑定 windowScene (state=%ld)", (long)targetScene.activationState);
         }
     }
 }
 
-// App 每次回到前台时确保悬浮窗可见
-- (void)appDidBecomeActive {
+// App 即将进入前台 - 提前准备 window
+- (void)appWillEnterForeground {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (!self.overlayWindow) {
-            [self createOverlayWindow];
-        } else {
-            self.overlayWindow.hidden = NO;
-            [self attachWindowScene];
-        }
+        [self ensureFloatingButtonVisible];
     });
+}
+
+// App 变为活跃状态 - 再次确保可见
+- (void)appDidBecomeActive {
+    // 延迟一小段时间，确保 Scene 已完全激活
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self ensureFloatingButtonVisible];
+    });
+}
+
+// iOS 13+ Scene 激活回调
+- (void)sceneDidActivate:(NSNotification *)notification API_AVAILABLE(ios(13.0)) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self ensureFloatingButtonVisible];
+    });
+}
+
+// iOS 13+ Scene 即将进入前台
+- (void)sceneWillEnterForeground:(NSNotification *)notification API_AVAILABLE(ios(13.0)) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self ensureFloatingButtonVisible];
+    });
+}
+
+// 统一的悬浮按钮可见性保证方法
+- (void)ensureFloatingButtonVisible {
+    if (!self.overlayWindow) {
+        [self createOverlayWindow];
+    } else {
+        self.overlayWindow.hidden = NO;
+        self.overlayWindow.windowLevel = UIWindowLevelAlert + 100;
+        [self attachWindowScene];
+    }
 }
 
 - (void)hideFloatingButton {
@@ -296,7 +352,7 @@ static CGFloat const kFloatingBtnSize = 44.0;
     NSString *paksDir = [[MapManager sharedManager] targetPaksDirectory];
     UILabel *statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(padding, 5, panelWidth - padding * 2, 30)];
     if (paksDir) {
-        statusLabel.text = [NSString stringWithFormat:@"✓ 目标目录已就绪"];
+        statusLabel.text = [NSString stringWithFormat:@"首次使用请先进入大厅在退出后台/后续请在登录界面操作"];
         statusLabel.textColor = kSuccessColor;
     } else {
         statusLabel.text = @"⚠ 未找到目标目录";
@@ -395,6 +451,9 @@ static CGFloat const kFloatingBtnSize = 44.0;
     }
     
     self.scrollView.contentSize = CGSizeMake(panelWidth, scrollY + 10);
+    
+    // 如果当前有正在进行的下载，恢复显示状态
+    [self restoreDownloadState];
 }
 
 - (NSString *)iconForMapType:(MapType)type {
@@ -486,6 +545,69 @@ static CGFloat const kFloatingBtnSize = 44.0;
         btn.backgroundColor = kPrimaryColor;
         [btn setTitle:@"下载" forState:UIControlStateNormal];
     }
+}
+
+// 恢复正在进行的下载状态（重新打开面板时调用）
+- (void)restoreDownloadState {
+    MapManager *manager = [MapManager sharedManager];
+    if (!manager.isDownloading) return;
+    
+    MapType type = manager.currentDownloadingMapType;
+    UIButton *btn = self.mapButtons[@(type)];
+    UIProgressView *progressView = self.progressViews[@(type)];
+    UILabel *stateLabel = self.statusLabels[@(type)];
+    
+    if (!btn || !progressView || !stateLabel) return;
+    
+    // 恢复按钮状态
+    btn.enabled = NO;
+    btn.backgroundColor = [UIColor colorWithRed:0.85 green:0.85 blue:0.87 alpha:1.0];
+    [btn setTitle:@"下载中" forState:UIControlStateNormal];
+    
+    // 恢复进度条
+    progressView.hidden = NO;
+    progressView.progress = manager.currentProgress;
+    stateLabel.hidden = NO;
+    stateLabel.text = [NSString stringWithFormat:@"下载中 %.0f%%", manager.currentProgress * 100];
+    stateLabel.textColor = kPrimaryColor;
+    
+    // 重新绑定回调到新的 UI 元素
+    manager.progressCallback = ^(float progress) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            progressView.progress = progress;
+            stateLabel.text = [NSString stringWithFormat:@"下载中 %.0f%%", progress * 100];
+        });
+    };
+    
+    manager.completionCallback = ^(BOOL success, NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (success) {
+                stateLabel.text = @"✓ 替换完成";
+                stateLabel.textColor = kSuccessColor;
+                btn.backgroundColor = kSuccessColor;
+                [btn setTitle:@"完成" forState:UIControlStateNormal];
+                btn.enabled = YES;
+                
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    btn.backgroundColor = kPrimaryColor;
+                    [btn setTitle:@"下载" forState:UIControlStateNormal];
+                });
+            } else {
+                stateLabel.text = [NSString stringWithFormat:@"✗ 下载失败: %@", error.localizedDescription];
+                stateLabel.textColor = [UIColor systemRedColor];
+                btn.enabled = YES;
+                btn.backgroundColor = kPrimaryColor;
+                [btn setTitle:@"重试" forState:UIControlStateNormal];
+            }
+            
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                progressView.hidden = YES;
+                stateLabel.hidden = YES;
+            });
+        });
+    };
+    
+    NSLog(@"[MapReplacer] 已恢复下载状态，当前进度: %.0f%%", manager.currentProgress * 100);
 }
 
 @end
