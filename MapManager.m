@@ -55,7 +55,7 @@
                          type:MapTypeBaltic],
         
         [MapInfo infoWithName:@"海岛地图 (全除)"
-                      pakFile:@"map_desert_1.36.11.15210.pak"
+                      pakFile:@"map_baltic_1.36.11.15210.pak"
                          type:MapTypeDesert],
         
         [MapInfo infoWithName:@"雨林地图 (Sanhok)"
