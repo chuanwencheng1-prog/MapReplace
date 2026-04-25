@@ -128,11 +128,11 @@
     // 销毁旧的 session
     [self.currentSession invalidateAndCancel];
     
-    // 使用后台下载会话，关闭面板/切换后台都不会中断
-    NSString *sessionID = [NSString stringWithFormat:@"com.mapreplacer.download.%ld.%f", (long)mapType, [[NSDate date] timeIntervalSince1970]];
-    NSURLSessionConfiguration *config = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:sessionID];
-    config.sessionSendsLaunchEvents = YES;
-    config.discretionary = NO;  // 不延迟下载
+    // 使用默认会话（兼容所有设备，无需特殊权限）
+    // 关闭面板不会中断下载，因为 MapManager 单例持有 session 引用
+    NSURLSessionConfiguration *config = [NSURLSessionConfiguration defaultSessionConfiguration];
+    config.timeoutIntervalForRequest = 300;   // 请求超时 5 分钟
+    config.timeoutIntervalForResource = 3600; // 资源超时 1 小时
     
     NSURLSession *session = [NSURLSession sessionWithConfiguration:config
                                                           delegate:self
