@@ -50,9 +50,9 @@ BOOL SandboxEscapeInit(void) {
         NSLog(@"[SBX] >>> Starting DarkSword kexploit init...");
 
         // 1. 启动 kernel R/W 原语 (opa334 XPF + kfd/krw)
-        int kxok = kexploit_opa334_init();
+        int kxok = kexploit_opa334();
         if (kxok != 0) {
-            NSLog(@"[SBX] kexploit_opa334_init FAILED (rc=%d)", kxok);
+            NSLog(@"[SBX] kexploit_opa334 FAILED (rc=%d)", kxok);
             return;
         }
         NSLog(@"[SBX] kexploit ready (krw available)");
