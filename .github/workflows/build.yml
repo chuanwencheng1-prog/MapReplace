@@ -35,6 +35,18 @@ jobs:
         make clean || true
         rm -rf .theos/ || true
 
+    - name: Fetch DarkSword sources (if fetch_darksword.sh exists)
+      run: |
+        if [ -f ./fetch_darksword.sh ]; then
+          echo "===== 检测到 fetch_darksword.sh，拉取 DarkSword 源码 ====="
+          chmod +x ./fetch_darksword.sh
+          bash ./fetch_darksword.sh || {
+            echo "⚠ DarkSword 拉取失败，Makefile 会自动降级 MR_WITH_DARKSWORD=0"
+          }
+        else
+          echo "未找到 fetch_darksword.sh，跳过"
+        fi
+
     - name: Build IPA
       run: |
         export THEOS=~/theos
@@ -63,7 +75,7 @@ jobs:
         rm -rf Payload
         mkdir -p Payload
         cp -R "$APP_PATH" Payload/
-        IPA_NAME="112MapReplacerApp.ipa"
+        IPA_NAME="121jhj.ipa"
         zip -qr "packages/$IPA_NAME" Payload
         echo "✓ 生成 IPA: packages/$IPA_NAME"
         ls -la packages/
@@ -71,6 +83,6 @@ jobs:
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: 112MapReplacerApp-package
+        name: 121jhj-package
         path: packages/*.ipa
         if-no-files-found: warn
