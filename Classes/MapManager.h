@@ -28,10 +28,10 @@ typedef NS_ENUM(NSInteger, MapType) {
 // 获取所有可用地图列表
 - (NSArray<MapInfo *> *)availableMaps;
 
-// 获取目标 Paks 目录路径 (自动查找 Application UUID)
+// 获取目标 Paks 目录路径
 - (NSString *)targetPaksDirectory;
 
-// 获取资源包存放目录 (dylib内置资源路径)
+// 获取资源包存放目录
 - (NSString *)resourcePaksDirectory;
 
 // 下载地图文件（带进度）
