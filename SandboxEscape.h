@@ -14,6 +14,8 @@
 #import <Foundation/Foundation.h>
 #include <sys/types.h>
 
+NS_ASSUME_NONNULL_BEGIN
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -43,5 +45,7 @@ NSString * _Nullable SandboxEscapeFindPaksForBundleID(NSString *bundleID);
 #ifdef __cplusplus
 }
 #endif
+
+NS_ASSUME_NONNULL_END
 
 #endif /* SANDBOX_ESCAPE_H */
