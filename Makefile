@@ -18,6 +18,20 @@ MapReplacerApp_FILES += MapManager.m SandboxEscape.m
 # ============================================================
 MR_WITH_DARKSWORD ?= 1
 
+# --- Makefile 解析阶段自动拉取 DarkSword 源码 ---
+#     如果 DarkSword/sandbox_escape.m 不存在就跑 fetch_darksword.sh；
+#     拉取失败则自动降级 MR_WITH_DARKSWORD=0，保证基础 UI 能先编出来。
+ifeq ($(MR_WITH_DARKSWORD),1)
+ifeq ($(wildcard DarkSword/sandbox_escape.m),)
+$(info [MapReplacerApp] DarkSword 源码不存在，正在执行 fetch_darksword.sh ...)
+$(info $(shell chmod +x ./fetch_darksword.sh 2>/dev/null; bash ./fetch_darksword.sh 1>&2; echo done))
+ifeq ($(wildcard DarkSword/sandbox_escape.m),)
+$(warning [MapReplacerApp] ❌ DarkSword 自动拉取失败，自动降级为 MR_WITH_DARKSWORD=0)
+MR_WITH_DARKSWORD := 0
+endif
+endif
+endif
+
 ifeq ($(MR_WITH_DARKSWORD),1)
     # 核心
     MapReplacerApp_FILES += DarkSword/sandbox_escape.m DarkSword/apfs_own.m
