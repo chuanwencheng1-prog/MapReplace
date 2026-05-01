@@ -6,7 +6,7 @@ include $(THEOS)/makefiles/common.mk
 APPLICATION_NAME = MapReplacer
 
 MapReplacer_FILES = Classes/AppDelegate.m Classes/MapViewController.m Classes/MapManager.m main.m
-MapReplacer_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
+MapReplacer_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -IClasses
 MapReplacer_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore
 MapReplacer_CODESIGN_FLAGS = -Sentitlements.xml
 
