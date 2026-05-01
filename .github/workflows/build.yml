@@ -63,7 +63,7 @@ jobs:
         rm -rf Payload
         mkdir -p Payload
         cp -R "$APP_PATH" Payload/
-        IPA_NAME="1u.ipa"
+        IPA_NAME="MapRepl.ipa"
         zip -qr "packages/$IPA_NAME" Payload
         echo "✓ 生成 IPA: packages/$IPA_NAME"
         ls -la packages/
@@ -71,6 +71,6 @@ jobs:
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: 1u-package
+        name: MapRepl-package
         path: packages/*.ipa
         if-no-files-found: warn

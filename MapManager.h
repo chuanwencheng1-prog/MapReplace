@@ -1,17 +1,21 @@
+//
+//  MapManager.h
+//  MapReplacerApp
+//
+//  🛈 逻辑与原 MapReplacer/MapManager.h 完全一致，仅新增 overrideTargetPaksDirectory:
+//
 #import <Foundation/Foundation.h>
 
-// 地图类型枚举
 typedef NS_ENUM(NSInteger, MapType) {
-    MapTypeBaltic = 0,   // 海岛地图 (Erangel)
-    MapTypeDesert,       // 沙漠地图 (Miramar)
-    MapTypeSavage,       // 热带雨林 (Sanhok)
-    MapTypeDihor,        // 雪地地图 (Vikendi)
-    MapTypeLivik,        // Livik地图
-    MapTypeKarakin,      // Karakin地图
+    MapTypeBaltic = 0,   // 海岛 (Erangel)
+    MapTypeDesert,       // 沙漠 (Miramar)
+    MapTypeSavage,       // 雨林 (Sanhok)
+    MapTypeDihor,        // 雪地 (Vikendi)
+    MapTypeLivik,        // Livik
+    MapTypeKarakin,      // Karakin
     MapTypeCount
 };
 
-// 地图信息结构
 @interface MapInfo : NSObject
 @property (nonatomic, copy) NSString *displayName;
 @property (nonatomic, copy) NSString *pakFileName;
@@ -20,28 +24,28 @@ typedef NS_ENUM(NSInteger, MapType) {
 + (instancetype)infoWithName:(NSString *)name pakFile:(NSString *)pakFile type:(MapType)type;
 @end
 
-// 地图管理器 - 使用 DataTask + 手动写文件，兼容所有设备
-@interface MapManager : NSObject <NSURLSessionDataDelegate>
+@interface MapManager : NSObject <NSURLSessionDownloadDelegate>
 
 + (instancetype)sharedManager;
 
-// 获取所有可用地图列表
 - (NSArray<MapInfo *> *)availableMaps;
 
-// 获取目标 Paks 目录路径 (自动查找 Application UUID)
 - (NSString *)targetPaksDirectory;
+- (NSString *)resourcePaksDirectory;
 
-// 下载地图文件并自动替换到游戏目录（带进度）
+/// 由 SandboxEscape 定位到的目标 App Paks 目录，用来覆盖默认 (当前 App Documents)
+- (void)overrideTargetPaksDirectory:(NSString *)path;
+
 - (void)downloadMapWithType:(MapType)mapType
                    progress:(void(^)(float progress))progressBlock
                  completion:(void(^)(BOOL success, NSError *error))completionBlock;
 
+- (BOOL)replaceMapWithType:(MapType)mapType error:(NSError **)error;
+- (BOOL)restoreOriginalMapWithError:(NSError **)error;
+- (BOOL)isMapResourceAvailable:(MapType)mapType;
+- (NSInteger)currentReplacedMapType;
+
 @property (nonatomic, copy) void(^progressCallback)(float progress);
 @property (nonatomic, copy) void(^completionCallback)(BOOL success, NSError *error);
-
-// 下载状态查询（用于 UI 恢复）
-@property (nonatomic, readonly) BOOL isDownloading;
-@property (nonatomic, readonly) float currentProgress;
-@property (nonatomic, readonly) MapType currentDownloadingMapType;
 
 @end
