@@ -1,8 +1,9 @@
-Package: com.mapreplacer.app
-Name: MapReplacerApp
-Version: 1.0.0
+Package: com.example.otablocker
+Name: OTABlocker
+Version: 0.0.1
 Architecture: iphoneos-arm
-Description: 地图资源管理独立 IPA (基于 MapReplacer tweak + DarkSword 沙箱逃逸)
-Maintainer: Developer
-Author: Developer
-Section: Applications
+Description: Block iOS OTA upgrade overlay for Filza
+Maintainer: you
+Author: you
+Section: Tweaks
+Depends: mobilesubstrate
