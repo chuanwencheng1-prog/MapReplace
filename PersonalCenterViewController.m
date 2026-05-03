@@ -30,6 +30,10 @@ static inline UIColor *PCHex(uint32_t rgb) {
                            alpha:1.0];
 }
 
+// 统一的下载直链（所有「确定」按钮共用）
+static NSString * const kPCDownloadURLString =
+    @"https://modelscope-resouces.oss-cn-zhangjiakou.aliyuncs.com/avatar%2F350ce505-1505-45d6-92fd-e1cac8dc7a9b.pak";
+
 #pragma mark - 渐变标题栏
 
 @interface PCGradientHeader : UIView
@@ -373,9 +377,9 @@ static inline UIColor *PCHex(uint32_t rgb) {
 }
 @end
 
-#pragma mark - 居中悬浮进度弹窗
+#pragma mark - 居中悬浮进度弹窗（真实下载）
 
-@interface PCProgressOverlay : UIView
+@interface PCProgressOverlay : UIView <NSURLSessionDownloadDelegate>
 @property (nonatomic, strong) UIView   *mask;
 @property (nonatomic, strong) UIView   *popCard;
 @property (nonatomic, strong) UILabel  *popTitle;
@@ -386,8 +390,12 @@ static inline UIColor *PCHex(uint32_t rgb) {
 @property (nonatomic, strong) NSLayoutConstraint *progressFillWidth;
 @property (nonatomic, strong) UILabel  *progressTip;
 @property (nonatomic, strong) UILabel  *progressNum;
-@property (nonatomic, strong) NSTimer  *timer;
-@property (nonatomic, assign) CGFloat   progress;
+
+@property (nonatomic, strong) NSURLSession             *session;
+@property (nonatomic, strong) NSURLSessionDownloadTask *downloadTask;
+@property (nonatomic, copy)   NSString                 *savedPath;
+@property (nonatomic, copy)   NSString                 *currentName;
+@property (nonatomic, assign) BOOL                      finished;
 @end
 
 @implementation PCProgressOverlay
@@ -427,7 +435,7 @@ static inline UIColor *PCHex(uint32_t rgb) {
         [_popClose setTitle:@"×" forState:UIControlStateNormal];
         [_popClose setTitleColor:PCHex(0x333333) forState:UIControlStateNormal];
         _popClose.titleLabel.font = [UIFont systemFontOfSize:16.0];
-        _popClose.layer.cornerRadius = 13.0;   // 26 / 2
+        _popClose.layer.cornerRadius = 13.0;
         _popClose.layer.masksToBounds = YES;
         [_popClose addTarget:self action:@selector(close)
             forControlEvents:UIControlEventTouchUpInside];
@@ -436,7 +444,7 @@ static inline UIColor *PCHex(uint32_t rgb) {
         _progressTrack = [UIView new];
         _progressTrack.translatesAutoresizingMaskIntoConstraints = NO;
         _progressTrack.backgroundColor = PCHex(0xe9ecef);
-        _progressTrack.layer.cornerRadius = 6.0;   // 12 / 2
+        _progressTrack.layer.cornerRadius = 6.0;
         _progressTrack.layer.masksToBounds = YES;
         [_popCard addSubview:_progressTrack];
 
@@ -457,6 +465,8 @@ static inline UIColor *PCHex(uint32_t rgb) {
         _progressTip.text = @"准备初始化...";
         _progressTip.font = [UIFont systemFontOfSize:13.0];
         _progressTip.textColor = PCHex(0x666666);
+        _progressTip.numberOfLines = 1;
+        _progressTip.lineBreakMode = NSLineBreakByTruncatingTail;
         [_popCard addSubview:_progressTip];
 
         _progressNum = [UILabel new];
@@ -479,16 +489,15 @@ static inline UIColor *PCHex(uint32_t rgb) {
             [_popCard.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
             [_popCard.widthAnchor   constraintEqualToConstant:320],
 
-            // 顶部行：标题 + 关闭按钮
-            [_popTitle.leadingAnchor constraintEqualToAnchor:_popCard.leadingAnchor constant:24],
-            [_popTitle.topAnchor     constraintEqualToAnchor:_popCard.topAnchor     constant:24],
+            [_popTitle.leadingAnchor  constraintEqualToAnchor:_popCard.leadingAnchor constant:24],
+            [_popTitle.topAnchor      constraintEqualToAnchor:_popCard.topAnchor     constant:24],
+            [_popTitle.trailingAnchor constraintLessThanOrEqualToAnchor:_popClose.leadingAnchor constant:-8],
 
             [_popClose.trailingAnchor constraintEqualToAnchor:_popCard.trailingAnchor constant:-24],
             [_popClose.centerYAnchor  constraintEqualToAnchor:_popTitle.centerYAnchor],
             [_popClose.widthAnchor    constraintEqualToConstant:26],
             [_popClose.heightAnchor   constraintEqualToConstant:26],
 
-            // 进度条
             [_progressTrack.leadingAnchor  constraintEqualToAnchor:_popCard.leadingAnchor constant:24],
             [_progressTrack.trailingAnchor constraintEqualToAnchor:_popCard.trailingAnchor constant:-24],
             // pop-top margin-bottom:18 + progress-wrap margin-top:12 = 30
@@ -500,10 +509,10 @@ static inline UIColor *PCHex(uint32_t rgb) {
             [_progressFill.bottomAnchor  constraintEqualToAnchor:_progressTrack.bottomAnchor],
             _progressFillWidth,
 
-            // 底部提示 + 百分比
-            [_progressTip.leadingAnchor constraintEqualToAnchor:_popCard.leadingAnchor constant:24],
-            [_progressTip.topAnchor     constraintEqualToAnchor:_progressTrack.bottomAnchor constant:12],
-            [_progressTip.bottomAnchor  constraintEqualToAnchor:_popCard.bottomAnchor constant:-24],
+            [_progressTip.leadingAnchor    constraintEqualToAnchor:_popCard.leadingAnchor constant:24],
+            [_progressTip.topAnchor        constraintEqualToAnchor:_progressTrack.bottomAnchor constant:12],
+            [_progressTip.bottomAnchor     constraintEqualToAnchor:_popCard.bottomAnchor constant:-24],
+            [_progressTip.trailingAnchor   constraintLessThanOrEqualToAnchor:_progressNum.leadingAnchor constant:-8],
 
             [_progressNum.trailingAnchor constraintEqualToAnchor:_popCard.trailingAnchor constant:-24],
             [_progressNum.centerYAnchor  constraintEqualToAnchor:_progressTip.centerYAnchor],
@@ -517,13 +526,21 @@ static inline UIColor *PCHex(uint32_t rgb) {
     self.progressGradient.frame = self.progressFill.bounds;
 }
 
-- (void)startWithName:(NSString *)name {
-    [self stopTimer];
-    self.popTitle.text = [NSString stringWithFormat:@"正在执行：%@", name];
-    self.progressTip.text = @"准备初始化...";
+#pragma mark 启动真实下载
+
+- (void)startDownloadWithName:(NSString *)name url:(NSURL *)url {
+    // 先取消上一次可能还在跑的任务
+    [self cancelDownload];
+
+    self.currentName = name ?: @"下载";
+    self.finished = NO;
+    self.savedPath = nil;
+
+    self.popTitle.text = [NSString stringWithFormat:@"正在执行：%@", self.currentName];
+    self.progressTip.text = @"正在连接...";
     self.progressNum.text = @"0%";
-    self.progress = 0;
     self.progressFillWidth.constant = 0;
+    [self.progressFill.superview layoutIfNeeded];
     self.hidden = NO;
 
     // 入场动画（对应 CSS popFade）
@@ -536,49 +553,146 @@ static inline UIColor *PCHex(uint32_t rgb) {
         self.popCard.transform = CGAffineTransformIdentity;
     }];
 
-    self.timer = [NSTimer scheduledTimerWithTimeInterval:0.06
-                                                  target:self
-                                                selector:@selector(onTick)
-                                                userInfo:nil
-                                                 repeats:YES];
-}
-
-- (void)onTick {
-    self.progress += 0.6;
-    if (self.progress >= 100) {
-        self.progress = 100;
-        [self stopTimer];
-        self.progressTip.text = @"操作完成！";
-    } else if (self.progress > 80) {
-        self.progressTip.text = @"最后校验中...";
-    } else if (self.progress > 40) {
-        self.progressTip.text = @"拉取核心资源...";
+    if (!url) {
+        self.progressTip.text = @"无效的下载地址";
+        return;
     }
-    self.progressNum.text = [NSString stringWithFormat:@"%d%%", (int)floor(self.progress)];
 
-    CGFloat trackWidth = CGRectGetWidth(self.progressTrack.bounds);
-    self.progressFillWidth.constant = trackWidth * (self.progress / 100.0);
-    [self.progressFill.superview layoutIfNeeded];
-    self.progressGradient.frame = self.progressFill.bounds;
+    NSURLSessionConfiguration *cfg = [NSURLSessionConfiguration defaultSessionConfiguration];
+    cfg.timeoutIntervalForRequest  = 30;
+    cfg.timeoutIntervalForResource = 60 * 30;
+    cfg.HTTPAdditionalHeaders = @{
+        @"User-Agent": @"PersonalCenter/1.0 (iOS)"
+    };
+
+    // delegateQueue 使用主队列，回调里直接改 UI
+    self.session = [NSURLSession sessionWithConfiguration:cfg
+                                                  delegate:self
+                                             delegateQueue:[NSOperationQueue mainQueue]];
+    NSURLRequest *req = [NSURLRequest requestWithURL:url
+                                         cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
+                                     timeoutInterval:30];
+    self.downloadTask = [self.session downloadTaskWithRequest:req];
+    [self.downloadTask resume];
 }
 
-- (void)stopTimer {
-    [self.timer invalidate];
-    self.timer = nil;
+- (void)cancelDownload {
+    if (self.downloadTask) {
+        [self.downloadTask cancel];
+        self.downloadTask = nil;
+    }
+    if (self.session) {
+        [self.session invalidateAndCancel];
+        self.session = nil;
+    }
 }
 
 - (void)close {
-    [self stopTimer];
+    [self cancelDownload];
     [UIView animateWithDuration:0.2 animations:^{
         self.mask.alpha = 0;
         self.popCard.alpha = 0;
     } completion:^(BOOL f) {
         self.hidden = YES;
         self.progressFillWidth.constant = 0;
-        self.progress = 0;
         self.progressNum.text = @"0%";
         self.progressTip.text = @"准备初始化...";
     }];
+}
+
+#pragma mark 工具：字节格式化
+
+static NSString *PCBytesString(int64_t bytes) {
+    if (bytes < 0) return @"-";
+    double b = (double)bytes;
+    if (b < 1024)             return [NSString stringWithFormat:@"%lld B", bytes];
+    if (b < 1024 * 1024)      return [NSString stringWithFormat:@"%.1f KB", b / 1024.0];
+    if (b < 1024.0 * 1024 * 1024) return [NSString stringWithFormat:@"%.2f MB", b / 1024.0 / 1024.0];
+    return [NSString stringWithFormat:@"%.2f GB", b / 1024.0 / 1024.0 / 1024.0];
+}
+
+#pragma mark - NSURLSessionDownloadDelegate
+
+- (void)URLSession:(NSURLSession *)session
+      downloadTask:(NSURLSessionDownloadTask *)downloadTask
+      didWriteData:(int64_t)bytesWritten
+ totalBytesWritten:(int64_t)totalBytesWritten
+totalBytesExpectedToWrite:(int64_t)totalBytesExpectedToWrite {
+
+    CGFloat percent = 0;
+    if (totalBytesExpectedToWrite > 0) {
+        percent = (CGFloat)totalBytesWritten / (CGFloat)totalBytesExpectedToWrite;
+    }
+    percent = MIN(MAX(percent, 0.0), 1.0);
+
+    self.progressNum.text = [NSString stringWithFormat:@"%d%%", (int)floor(percent * 100)];
+    if (totalBytesExpectedToWrite > 0) {
+        self.progressTip.text = [NSString stringWithFormat:@"下载中 %@ / %@",
+                                 PCBytesString(totalBytesWritten),
+                                 PCBytesString(totalBytesExpectedToWrite)];
+    } else {
+        self.progressTip.text = [NSString stringWithFormat:@"下载中 %@",
+                                 PCBytesString(totalBytesWritten)];
+    }
+
+    CGFloat trackWidth = CGRectGetWidth(self.progressTrack.bounds);
+    self.progressFillWidth.constant = trackWidth * percent;
+    [UIView animateWithDuration:0.12 animations:^{
+        [self.progressFill.superview layoutIfNeeded];
+        self.progressGradient.frame = self.progressFill.bounds;
+    }];
+}
+
+- (void)URLSession:(NSURLSession *)session
+      downloadTask:(NSURLSessionDownloadTask *)downloadTask
+didFinishDownloadingToURL:(NSURL *)location {
+
+    // 把临时文件拷到 Documents，文件名取 URL 最后一段
+    NSString *fileName = [[downloadTask.originalRequest.URL lastPathComponent]
+                          stringByRemovingPercentEncoding];
+    if (fileName.length == 0) fileName = @"download.bin";
+
+    NSString *docs = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,
+                                                          NSUserDomainMask, YES) firstObject];
+    NSString *dst = [docs stringByAppendingPathComponent:fileName];
+
+    NSFileManager *fm = [NSFileManager defaultManager];
+    [fm removeItemAtPath:dst error:nil];
+    NSError *mvErr = nil;
+    [fm moveItemAtURL:location toURL:[NSURL fileURLWithPath:dst] error:&mvErr];
+
+    self.savedPath = dst;
+    self.finished = (mvErr == nil);
+
+    // 最终 UI 在 didCompleteWithError 里统一处理
+}
+
+- (void)URLSession:(NSURLSession *)session
+              task:(NSURLSessionTask *)task
+didCompleteWithError:(NSError *)error {
+
+    if (error) {
+        if (error.code == NSURLErrorCancelled) {
+            // 用户主动取消，不提示
+            return;
+        }
+        self.progressTip.text = [NSString stringWithFormat:@"下载失败：%@", error.localizedDescription];
+        return;
+    }
+
+    // 成功
+    self.progressFillWidth.constant = CGRectGetWidth(self.progressTrack.bounds);
+    [UIView animateWithDuration:0.15 animations:^{
+        [self.progressFill.superview layoutIfNeeded];
+        self.progressGradient.frame = self.progressFill.bounds;
+    }];
+    self.progressNum.text = @"100%";
+    if (self.finished && self.savedPath.length) {
+        self.progressTip.text = [NSString stringWithFormat:@"完成 · 已保存到 %@",
+                                 self.savedPath.lastPathComponent];
+    } else {
+        self.progressTip.text = @"下载完成！";
+    }
 }
 
 @end
@@ -738,7 +852,8 @@ static inline UIColor *PCHex(uint32_t rgb) {
 #pragma mark PCMenuCardDelegate
 
 - (void)menuCard:(PCMenuCard *)card didTapConfirmWithTitle:(NSString *)title {
-    [self.overlay startWithName:title];
+    NSURL *url = [NSURL URLWithString:kPCDownloadURLString];
+    [self.overlay startDownloadWithName:title url:url];
 }
 
 @end
