@@ -1,8 +1,8 @@
-Package: com.example.otablocker
-Name: OTABlocker
+Package: com.example.personalcenter
+Name: PersonalCenter
 Version: 0.0.1
 Architecture: iphoneos-arm
-Description: Block iOS OTA upgrade overlay for Filza
+Description: Personal center menu UI overlay (wy.html 1:1 reproduction)
 Maintainer: you
 Author: you
 Section: Tweaks
