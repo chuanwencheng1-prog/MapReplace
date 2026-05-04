@@ -23,6 +23,7 @@ static inline UIColor *HEX(uint32_t rgb) {
                             blue:( rgb        & 0xFF)/255.0
                            alpha:1.0];
 }
+__attribute__((unused))
 static inline UIColor *HEXA(uint32_t rgb, CGFloat a) {
     return [UIColor colorWithRed:((rgb >> 16) & 0xFF)/255.0
                            green:((rgb >>  8) & 0xFF)/255.0
