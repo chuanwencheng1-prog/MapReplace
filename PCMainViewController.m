@@ -200,12 +200,14 @@ static inline UIColor *HEXA(uint32_t rgb, CGFloat a) {
             : CGAffineTransformIdentity;
         self.arrowLabel.textColor = self.expanded ? HEX(0x1677FF) : HEX(0x999999);
 
-        // 触发父视图重布局（卡片会改高度 → 主容器会重排）
+        // 冒泡到最顶层（Window / 根视图），触发主 VC 的 viewDidLayoutSubviews，
+        // 让所有卡片按新的 desiredHeight 重新排；否则 PCShadowContainer 的 bounds
+        // 不变 → card 高度定格在 60 → 二级容器被 masksToBounds 裁掉。
         [self invalidateIntrinsicContentSize];
-        if ([self.superview respondsToSelector:@selector(setNeedsLayout)]) {
-            [self.superview setNeedsLayout];
-            [self.superview layoutIfNeeded];
-        }
+        UIView *top = self;
+        while (top.superview) top = top.superview;
+        [top setNeedsLayout];
+        [top layoutIfNeeded];
     } completion:nil];
 }
 
