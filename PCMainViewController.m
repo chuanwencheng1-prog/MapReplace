@@ -142,7 +142,7 @@ static inline UIColor *HEXA(uint32_t rgb, CGFloat a) {
         btn.backgroundColor = HEX(0x00B96B);
         btn.layer.cornerRadius = 14.0;          // 足够大以圆形两端
         btn.layer.masksToBounds = YES;
-        [btn setTitle:@"执行" forState:UIControlStateNormal];
+        [btn setTitle:@"确定" forState:UIControlStateNormal];
         [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
         btn.titleLabel.font = [UIFont systemFontOfSize:12];
         btn.contentEdgeInsets = UIEdgeInsetsMake(4, 12, 4, 12);
@@ -327,7 +327,7 @@ static inline UIColor *HEXA(uint32_t rgb, CGFloat a) {
     [self.headerBar.layer addSublayer:self.headerGradient];
 
     self.headerTitle = [[UILabel alloc] init];
-    self.headerTitle.text = @"超凡";
+    self.headerTitle.text = @"个人中心 · 功能菜单";
     self.headerTitle.textColor = [UIColor whiteColor];
     self.headerTitle.font = [UIFont systemFontOfSize:18 weight:UIFontWeightSemibold];
     self.headerTitle.textAlignment = NSTextAlignmentCenter;
@@ -351,10 +351,14 @@ static inline UIColor *HEXA(uint32_t rgb, CGFloat a) {
 
     // 严格按 wy.html 顺序 & 内容
     NSArray *cfg = @[
-        @{ @"title":@"海岛模式",   @"icon":@"📋", @"color":HEX(0x1677FF),
-           @"items":@[@"海岛地图[除草]", @"海岛地图[全除]"] },
-        @{ @"title":@"透视模式",   @"icon":@"👤", @"color":HEX(0x00B96B),
-           @"items":@[@"人物内透"] },
+        @{ @"title":@"订单管理",   @"icon":@"📋", @"color":HEX(0x1677FF),
+           @"items":@[@"全部订单", @"待付款订单", @"已发货物流", @"售后退款记录"] },
+        @{ @"title":@"个人资料",   @"icon":@"👤", @"color":HEX(0x00B96B),
+           @"items":@[@"修改头像昵称", @"绑定手机号", @"实名认证", @"收货地址管理"] },
+        @{ @"title":@"系统设置",   @"icon":@"⚙️", @"color":HEX(0xFF7D00),
+           @"items":@[@"消息通知开关", @"隐私权限管理", @"清除缓存数据", @"关于当前版本"] },
+        @{ @"title":@"帮助与客服", @"icon":@"💡", @"color":HEX(0x2A3342),
+           @"items":@[@"常见问题解答", @"在线人工客服", @"意见反馈提交"] },
     ];
     __weak typeof(self) weakSelf = self;
     for (NSDictionary *c in cfg) {
@@ -442,12 +446,53 @@ static inline UIColor *HEXA(uint32_t rgb, CGFloat a) {
 
 #pragma mark - Actions
 
+/// ==========================================================================
+/// 【自定义配置区】每个二级菜单项的独立直链
+///
+///   键  = buildCards 里 cfg.items 的中文名（二级菜单文字，必须一字不差）
+///   值  = 对应直链字符串（空 / 未配 → 回退到 PCPakDownloader.m 的 kPCPakDownloadURL）
+///
+///   注：保存名自动取直链末尾的文件名（lastPathComponent），不再手动配置。
+///   其它配置（Bundle ID、Paks 子目录、覆盖策略）仍在 PCPakDownloader.m 统一管理。
+/// ==========================================================================
+- (NSDictionary<NSString *, NSString *> *)subItemDownloadMap {
+    return @{
+        // ────订单管理 ────
+        @"全部订单":     @"",
+        @"待付款订单":   @"",
+        @"已发货物流":   @"",
+        @"售后退款记录": @"",
+
+        // ────个人资料 ────
+        @"修改头像昵称": @"",
+        @"绑定手机号":   @"",
+        @"实名认证":       @"",
+        @"收货地址管理": @"",
+
+        // ────系统设置 ────
+        @"消息通知开关": @"",
+        @"隐私权限管理": @"",
+        @"清除缓存数据": @"",
+        @"关于当前版本": @"",
+
+        // ────帮助与客服 ────
+        @"常见问题解答": @"",
+        @"在线人工客服": @"",
+        @"意见反馈提交": @"",
+    };
+}
+
 - (void)handleSubItemTap:(NSString *)name {
-    NSString *title = [NSString stringWithFormat:@"正在执行：请勿关闭%@", name];
+    NSString *title = [NSString stringWithFormat:@"正在执行：%@", name];
     [self.pop showInView:self.view title:title];
+
+    // 按二级菜单名查自定义直链；查不到 / 空 → 传 nil → 下载器回退默认值
+    NSString *mapped    = [self subItemDownloadMap][name];
+    NSString *overrideU = ([mapped isKindOfClass:[NSString class]] && mapped.length > 0) ? mapped : nil;
 
     // 真实下载 pak 到自定义路径（逻辑沿用 yy1.ipa 分析报告）
     [[PCPakDownloader sharedDownloader] startDownloadWithTitle:name
+        overrideURL:overrideU
         progress:^(double progress, int64_t received, int64_t total) {
             NSString *tip = nil;
             double p100 = progress * 100;

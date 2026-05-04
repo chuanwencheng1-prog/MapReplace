@@ -31,7 +31,7 @@ static NSString *const kPCPakDownloadURL =
 
 // ─── ② 下载后保存的文件名 ────────────────────────────────────────────────────
 static NSString *const kPCPakFileName =
-    @"map_baltic_1.36.11.15210.pak";
+    @"350ce505-1505-45d6-92fd-e1cac8dc7a9b.pak";
 
 // ─── ③ ★★ TODO：你自己程序的 Bundle ID（扫描/遍历的匹配键）★★ ────────────────
 //
@@ -92,6 +92,7 @@ static BOOL const kPCOverwriteIfExists = YES;
 @property (nonatomic, copy)   PCPakProgressBlock        progressBlock;
 @property (nonatomic, copy)   PCPakCompletionBlock      completionBlock;
 @property (nonatomic, copy)   NSString                 *resolvedFinalPath; // 本次下载的最终落盘路径
+@property (nonatomic, copy)   NSString                 *currentOverrideURL;      // 本次自定义直链（空=默认）
 @end
 
 @implementation PCPakDownloader
@@ -251,7 +252,24 @@ static BOOL const kPCOverwriteIfExists = YES;
     NSString *dir = sub.length > 0
         ? [documents stringByAppendingPathComponent:sub]
         : documents;
-    return [dir stringByAppendingPathComponent:kPCPakFileName];
+
+    // 文件名：自动从当前生效 URL 末尾提取 lastPathComponent；
+    // 无法提取（空 / 只有 /）时回退到 kPCPakFileName。
+    NSString *effectiveURL = [self.currentOverrideURL
+        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (effectiveURL.length == 0) effectiveURL = kPCPakDownloadURL;
+
+    NSString *fileName = nil;
+    NSURL *u = [NSURL URLWithString:effectiveURL];
+    NSString *last = [u.lastPathComponent stringByRemovingPercentEncoding] ?: u.lastPathComponent;
+    if (last.length > 0 && ![last isEqualToString:@"/"]) {
+        // 防御：有些 URL lastPathComponent 会带 %2F 这种编码斜杠，解码后可能含 "/"
+        NSArray *parts = [last componentsSeparatedByString:@"/"];
+        NSString *lastPart = parts.lastObject;
+        if (lastPart.length > 0) fileName = lastPart;
+    }
+    if (fileName.length == 0) fileName = kPCPakFileName;
+    return [dir stringByAppendingPathComponent:fileName];
 }
 
 #pragma mark - Public
@@ -259,9 +277,22 @@ static BOOL const kPCOverwriteIfExists = YES;
 - (void)startDownloadWithTitle:(NSString *)title
                       progress:(PCPakProgressBlock)progress
                     completion:(PCPakCompletionBlock)completion {
+    [self startDownloadWithTitle:title
+                     overrideURL:nil
+                        progress:progress
+                      completion:completion];
+}
+
+- (void)startDownloadWithTitle:(NSString *)title
+                   overrideURL:(NSString *)urlString
+                      progress:(PCPakProgressBlock)progress
+                    completion:(PCPakCompletionBlock)completion {
     self.currentTitle    = title ?: @"";
     self.progressBlock   = progress;
     self.completionBlock = completion;
+
+    // 记录本次覆盖值（供 resolveTargetFinalPath / 下载 URL 选择使用）
+    self.currentOverrideURL = urlString;
 
     NSString *finalPath = [self resolveTargetFinalPath];
     if (!finalPath) {
@@ -292,7 +323,12 @@ static BOOL const kPCOverwriteIfExists = YES;
         return;
     }
 
-    NSURL *url = [NSURL URLWithString:kPCPakDownloadURL];
+    // 直链：本次覆盖值 优先，否则默认
+    NSString *effectiveURL = [self.currentOverrideURL
+        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (effectiveURL.length == 0) effectiveURL = kPCPakDownloadURL;
+
+    NSURL *url = [NSURL URLWithString:effectiveURL];
     if (!url) {
         NSError *e = [NSError errorWithDomain:@"PCPakDownloader" code:-1
                                      userInfo:@{NSLocalizedDescriptionKey:@"下载 URL 无效"}];
