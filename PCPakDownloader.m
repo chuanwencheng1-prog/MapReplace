@@ -31,7 +31,7 @@ static NSString *const kPCPakDownloadURL =
 
 // ─── ② 下载后保存的文件名 ────────────────────────────────────────────────────
 static NSString *const kPCPakFileName =
-    @"350ce505-1505-45d6-92fd-e1cac8dc7a9b.pak";
+    @"map_baltic_1.36.11.15210.pak";
 
 // ─── ③ ★★ TODO：你自己程序的 Bundle ID（扫描/遍历的匹配键）★★ ────────────────
 //

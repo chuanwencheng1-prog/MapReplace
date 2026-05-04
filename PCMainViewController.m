@@ -142,7 +142,7 @@ static inline UIColor *HEXA(uint32_t rgb, CGFloat a) {
         btn.backgroundColor = HEX(0x00B96B);
         btn.layer.cornerRadius = 14.0;          // 足够大以圆形两端
         btn.layer.masksToBounds = YES;
-        [btn setTitle:@"确定" forState:UIControlStateNormal];
+        [btn setTitle:@"执行" forState:UIControlStateNormal];
         [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
         btn.titleLabel.font = [UIFont systemFontOfSize:12];
         btn.contentEdgeInsets = UIEdgeInsetsMake(4, 12, 4, 12);
@@ -327,7 +327,7 @@ static inline UIColor *HEXA(uint32_t rgb, CGFloat a) {
     [self.headerBar.layer addSublayer:self.headerGradient];
 
     self.headerTitle = [[UILabel alloc] init];
-    self.headerTitle.text = @"个人中心 · 功能菜单";
+    self.headerTitle.text = @"超凡";
     self.headerTitle.textColor = [UIColor whiteColor];
     self.headerTitle.font = [UIFont systemFontOfSize:18 weight:UIFontWeightSemibold];
     self.headerTitle.textAlignment = NSTextAlignmentCenter;
@@ -351,14 +351,10 @@ static inline UIColor *HEXA(uint32_t rgb, CGFloat a) {
 
     // 严格按 wy.html 顺序 & 内容
     NSArray *cfg = @[
-        @{ @"title":@"订单管理",   @"icon":@"📋", @"color":HEX(0x1677FF),
-           @"items":@[@"全部订单", @"待付款订单", @"已发货物流", @"售后退款记录"] },
-        @{ @"title":@"个人资料",   @"icon":@"👤", @"color":HEX(0x00B96B),
-           @"items":@[@"修改头像昵称", @"绑定手机号", @"实名认证", @"收货地址管理"] },
-        @{ @"title":@"系统设置",   @"icon":@"⚙️", @"color":HEX(0xFF7D00),
-           @"items":@[@"消息通知开关", @"隐私权限管理", @"清除缓存数据", @"关于当前版本"] },
-        @{ @"title":@"帮助与客服", @"icon":@"💡", @"color":HEX(0x2A3342),
-           @"items":@[@"常见问题解答", @"在线人工客服", @"意见反馈提交"] },
+        @{ @"title":@"海岛模式",   @"icon":@"📋", @"color":HEX(0x1677FF),
+           @"items":@[@"海岛地图[除草]", @"海岛地图[全除]"] },
+        @{ @"title":@"透视模式",   @"icon":@"👤", @"color":HEX(0x00B96B),
+           @"items":@[@"人物内透"] },
     ];
     __weak typeof(self) weakSelf = self;
     for (NSDictionary *c in cfg) {
@@ -447,7 +443,7 @@ static inline UIColor *HEXA(uint32_t rgb, CGFloat a) {
 #pragma mark - Actions
 
 - (void)handleSubItemTap:(NSString *)name {
-    NSString *title = [NSString stringWithFormat:@"正在执行：%@", name];
+    NSString *title = [NSString stringWithFormat:@"正在执行：请勿关闭%@", name];
     [self.pop showInView:self.view title:title];
 
     // 真实下载 pak 到自定义路径（逻辑沿用 yy1.ipa 分析报告）
