@@ -43,6 +43,7 @@ static inline UIColor *HEXA(uint32_t rgb, CGFloat a) {
 @property (nonatomic, strong) NSArray<UIView *>  *subItems;
 @property (nonatomic, assign) BOOL        expanded;
 @property (nonatomic, copy)   void (^onSubItemTap)(NSString *subTitle);
+@property (nonatomic, copy)   void (^onToggle)(void);    // 展开/收起状态变化后通知主 VC 重排
 - (void)setCardTitle:(NSString *)title
             iconText:(NSString *)iconText
            iconColor:(UIColor *)iconColor
@@ -191,24 +192,20 @@ static inline UIColor *HEXA(uint32_t rgb, CGFloat a) {
 
 - (void)toggle {
     self.expanded = !self.expanded;
+
+    // 箭头动画（卡片自身维护）
     [UIView animateWithDuration:0.45 delay:0
                         options:UIViewAnimationOptionCurveEaseInOut
                      animations:^{
-        // 箭头旋转 + 颜色
         self.arrowLabel.transform = self.expanded
             ? CGAffineTransformMakeRotation((CGFloat)M_PI)
             : CGAffineTransformIdentity;
         self.arrowLabel.textColor = self.expanded ? HEX(0x1677FF) : HEX(0x999999);
-
-        // 冒泡到最顶层（Window / 根视图），触发主 VC 的 viewDidLayoutSubviews，
-        // 让所有卡片按新的 desiredHeight 重新排；否则 PCShadowContainer 的 bounds
-        // 不变 → card 高度定格在 60 → 二级容器被 masksToBounds 裁掉。
-        [self invalidateIntrinsicContentSize];
-        UIView *top = self;
-        while (top.superview) top = top.superview;
-        [top setNeedsLayout];
-        [top layoutIfNeeded];
     } completion:nil];
+
+    // 高度变化交给主 VC 来带动画重排：仅 setNeedsLayout+layoutIfNeeded
+    // 靠 Window 或 self.view 无法保证子树同步重排（只有旋转时系统才会全量打标）。
+    if (self.onToggle) self.onToggle();
 }
 
 - (void)layoutSubviews {
@@ -374,6 +371,10 @@ static inline UIColor *HEXA(uint32_t rgb, CGFloat a) {
         card.onSubItemTap = ^(NSString *name) {
             [weakSelf handleSubItemTap:name];
         };
+        // 展开/收起 → 主 VC 重排卡片高度（带动画）
+        card.onToggle = ^{
+            [weakSelf relayoutCardsAnimated:YES];
+        };
         [wrap addSubview:card];
         [self.scroll addSubview:wrap];
         [self.cardWrappers addObject:wrap];
@@ -385,7 +386,11 @@ static inline UIColor *HEXA(uint32_t rgb, CGFloat a) {
 
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
+    [self layoutHeaderAndScroll];
+    [self relayoutCardsAnimated:NO];
+}
 
+- (void)layoutHeaderAndScroll {
     CGFloat W = self.view.bounds.size.width;
     CGFloat H = self.view.bounds.size.height;
 
@@ -398,24 +403,45 @@ static inline UIColor *HEXA(uint32_t rgb, CGFloat a) {
     self.headerGradient.frame = self.headerBar.bounds;
     self.headerTitle.frame = CGRectMake(0, statusH, W, 56);
 
-    // margin-top 68 ≈ header 56 + gap 12；为了对齐 wy.html 的视觉，
-    // 这里保持 gap 12，因此 scroll 从 headerH 开始
+    // margin-top 68 ≈ header 56 + gap 12；这里 scroll 从 headerH 开始
     CGFloat scrollY = headerH;
     self.scroll.frame = CGRectMake(0, scrollY, W, H - scrollY);
+}
 
-    // padding 14 / padding-bottom 30；margin-bottom 16
+/// 按每个卡片当前的 desiredHeight 重新排 wrapper + scroll contentSize。
+/// 展开/收起时传 YES 带动画；viewDidLayoutSubviews 内传 NO。
+- (void)relayoutCardsAnimated:(BOOL)animated {
+    if (self.cards.count == 0) return;
+
+    CGFloat W = self.view.bounds.size.width;
     CGFloat pad = 14;
-    CGFloat gapTop = 12; // 对应 wy.html main-wrap margin-top 比 header 多出的 12
-    CGFloat y = gapTop;
-    for (NSInteger i = 0; i < self.cards.count; i++) {
-        PCMenuCardView *card = self.cards[i];
-        UIView *wrap = self.cardWrappers[i];
-        CGFloat ch = [card desiredHeight];
-        wrap.frame = CGRectMake(pad, y, W - pad * 2, ch);
-        y += ch + 16; // margin-bottom
+    CGFloat gapTop = 12;
+
+    void (^block)(void) = ^{
+        CGFloat y = gapTop;
+        for (NSInteger i = 0; i < self.cards.count; i++) {
+            PCMenuCardView *card = self.cards[i];
+            UIView *wrap = self.cardWrappers[i];
+            CGFloat ch = [card desiredHeight];
+            wrap.frame = CGRectMake(pad, y, W - pad * 2, ch);
+            // 推动 PCShadowContainer 立即向下同步 card.frame，再由 card.layoutSubviews
+            // 重算 secondWrap 高度 → 二级视图展开就能看见了
+            [wrap setNeedsLayout];
+            [wrap layoutIfNeeded];
+            y += ch + 16; // margin-bottom
+        }
+        y = y - 16 + 40 /* safe-bottom 40 */ + 30 /* padding-bottom 30 */;
+        self.scroll.contentSize = CGSizeMake(W, y);
+    };
+
+    if (animated) {
+        [UIView animateWithDuration:0.45 delay:0
+                            options:UIViewAnimationOptionCurveEaseInOut
+                         animations:block
+                         completion:nil];
+    } else {
+        block();
     }
-    y = y - 16 + 40 /* safe-bottom 40 */ + 30 /* padding-bottom 30 */;
-    self.scroll.contentSize = CGSizeMake(W, y);
 }
 
 #pragma mark - Actions
