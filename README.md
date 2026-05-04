@@ -1,82 +1,90 @@
-# MapReplacer - iOS 地图替换器（IPA 版）
+# PersonalCenterUI —— 按 `wy.html` 1:1 还原的 iOS dylib 插件
 
-将原 dylib 越狱插件源码改造为 IPA 应用，无需越狱，通过 **TrollStore（巨魔）** 或 **自签** 即可安装。
+## 一、功能概述
 
-主界面采用与原 dylib 完全一致的 **悬浮按钮 + 弹出面板** UI。
+本工程是一个 **Theos tweak / dylib**，注入到宿主 `com.tigisoftware.Filza` 进程（可换任意宿主），
+启动即在 `keyWindow` 上 `present` 一个全屏首屏，
+**UI 与 `wy.html` 像素级一致**（尺寸、颜色、阴影、圆角、间距、动画均按 CSS 原样还原）：
 
-## 特性
+- 顶部 **56pt 渐变标题栏**（135° `#1677ff → #0958d9`，白字 18pt 600，阴影 0 2 12 rgba(9,88,217,0.18)）
+- 4 张 **白色圆角 20 菜单卡片**（阴影 0 4 18 rgba(0,0,0,0.06)，`margin-bottom: 16`）
+  - 订单管理 / 个人资料 / 系统设置 / 帮助与客服（图标、颜色、子项均一致）
+- 每个菜单：一级 60pt 行高、32x32 圆角 10 彩色图标、右侧 ⌄ 箭头（展开旋转 180° 并变蓝）
+- 二级行：`padding: 14 24`、14pt #555、底部 1pt 分隔；右侧 **#00b96b 圆角"确定"按钮**
+- 点击"确定" → 弹出 **320pt 圆角 20 居中进度弹窗**（进度条 12pt 高 `#00b96b → #23c97c` 渐变）
 
-- 🎯 **悬浮按钮 UI**：与原 dylib 插件的布局、动效、交互完全一致
-- 🪟 **UIWindow 悬浮层**：使用 `UIWindowLevelAlert+100` 的独立窗口，支持拖动
-- 📥 **下载管理**：NSURLSession 实时进度、下载完成自动替换
-- 🗂 **文件替换逻辑**：保留原 dylib 的备份 `.bak_original` 与恢复机制
-- 💾 **状态持久化**：通过 NSUserDefaults 记录当前已替换的地图类型
-- 🔁 **iOS 13+ 兼容**：UIOverlay 适配 WindowScene，解决新系统悬浮窗不显示问题
+逻辑流程**完整沿用** `yy1_ipa_分析报告.txt` 第二、三、四节：
+`LC_LOAD_WEAK_DYLIB` 注入 → `+load`/`UIApplicationDidFinishLaunchingNotification` 监听
+→ `keyWindow` 上 `present` VC → 点击按钮触发三路沙盒定位策略 + `downloadAndCopyPakFileWithURL:toDestination:`。
 
-## 目录结构
+### 三路沙盒定位（即 yy1.ipa 中 `[PAK下载器] 找到和平精英路径(方法1/2/3)` 的对应实现）
+
+> iOS 沙盒 UUID 是系统随机分配的 —— 你**写不出**绝对路径，必须扫描定位。
+
+| 策略 | 做什么 |
+| --- | --- |
+| **方法 1** | 扫描 `/var/mobile/Containers/Data/Application/*/.com.apple.mobile_container_manager.metadata.plist`，读取 `MCMMetadataIdentifier` 与目标 Bundle ID 比对 |
+| **方法 2** | 私有 API `LSApplicationWorkspace` 枚举所有 App，匹配 `applicationIdentifier` 后取 `dataContainerURL` |
+| **方法 3** | 若 dylib 宿主就是目标 App 自身（自注入场景），直接 `NSHomeDirectory()` 兜底 |
+
+> 与 yy1.ipa 唯一区别：目标 Bundle ID 不再写死为 `com.tencent.tmgp.pubgmhd`，而是由你在配置区填写**自己程序的 Bundle ID**。
+
+---
+
+## 二、★ 必改的自定义配置 ★
+
+打开 [`PCPakDownloader.m`](./PCPakDownloader.m)，顶部有醒目的 **"自定义配置区"**：
+
+| 字段 | 是否必改 | 说明 |
+| --- | --- | --- |
+| `kPCPakDownloadURL` | ❌ 已预填直链，不用动 | `.pak` 下载 URL |
+| `kPCPakFileName` | ⭕ 可选 | 保存后的文件名 |
+| **`kPCTargetBundleID`** | ✅ **必改** | **你自己程序的 Bundle ID**。扫描遍历的匹配键 |
+| **`kPCRelativeSubPath`** | ⭕ 已预填 `ShadowTrackerExtra/Saved/Paks` | 沙盒内相对子路径，相对 `Documents/` |
+| `kPCFallbackUUIDHint` | ⭕ 可选 | UUID 兜底 hint，留空=自动扫描 |
+| `kPCOverwriteIfExists` | ⭕ 可选 | `YES` = 覆盖已存在同名文件 |
+
+**最终落盘路径计算规则**：
+```
+<扫描定位到的沙盒根>/Documents/<kPCRelativeSubPath>/<kPCPakFileName>
+```
+例：`/var/mobile/Containers/Data/Application/DA6AEC98-D732-4E82-B789-246C0687FB93/Documents/ShadowTrackerExtra/Saved/Paks/xxx.pak`
+
+---
+
+## 三、目录结构
 
 ```
-MapReplacer-App/
-├── Classes/
-│   ├── AppDelegate.h/m          # 启动后调用 [UIOverlay showFloatingButton]
-│   ├── MapViewController.h/m    # 引导背景页（仅显示提示）
-│   ├── MapManager.h/m           # 与 dylib 完全一致的下载/替换管理
-│   └── UIOverlay.h/m            # 悬浮按钮 + 面板（来自 dylib）
-├── Resources/
-│   └── Info.plist               # Bundle 元信息
-├── main.m                       # UIApplicationMain 入口
-├── Makefile                     # Theos application 构建配置
-└── entitlements.xml             # TrollStore 完整权限
+projects/PersonalCenterUI/
+├── Makefile                     Theos 编译脚本（arm64 + arm64e，target iOS 14）
+├── control                      deb 包描述
+├── PersonalCenterUI.plist       注入目标 Filter（默认 com.tigisoftware.Filza）
+├── Tweak.xm                     dylib 入口 %ctor + 启动首屏 present
+├── PCMainViewController.h/.m    主 VC（wy.html 1:1 UI）
+├── PCDownloadPopView.h/.m       居中进度弹窗
+└── PCPakDownloader.h/.m         ★ 自定义配置区 ★ + 下载/复制实现
 ```
 
-## 与 dylib 行为的对应关系
+---
 
-| dylib 行为 | IPA 版实现 |
-|---|---|
-| `%ctor` 注入时创建 `/var/mobile/MapReplacerRes` | IPA 启动时在自身沙箱 Documents 下创建 `MapReplacerRes` |
-| Hook `AppDelegate didFinishLaunching` 延迟 3s 显示悬浮球 | 自身 `AppDelegate` 启动后延迟 0.8s 显示 |
-| 悬浮按钮点击弹出地图管理面板 | 完全一致（UIOverlay.m 直接复用） |
-| 下载完成后直接写入目标 Paks 目录并备份 | 完全一致 |
-| 记录当前地图类型 `MapReplacer_CurrentMap` | 完全一致 |
+## 四、云编译 + 注入 + 重签流程
 
-## 编译方法
+1. 把整个 `projects/PersonalCenterUI/` 目录 + `Filza.ipa` 一起喂给
+   [`theos_online_builder.py`](../../theos_online_builder.py)；
+2. GitHub Actions 会：
+   - 用 Theos 编译出 `PersonalCenterUI.dylib`（arm64 + arm64e）
+   - 用 `insert_dylib --weak --inplace` 给 `Payload/Filza.app/Filza` 追加
+     `LC_LOAD_WEAK_DYLIB @executable_path/PersonalCenterUI.dylib`
+   - `ldid`/`codesign` 重签并打包回 `Filza_PersonalCenter.ipa`；
+3. 用 AltStore / Sideloadly / 在线签名平台装回手机即可。
 
-### GitHub Actions 云编译
+安装后打开 Filza：**第一屏就是 `wy.html` 的个人中心页面**，
+点击任一菜单下的"确定" → 弹出进度条 → 自动下载 `.pak` 到你填的自定义路径。
 
-1. Fork 本仓库并启用 Actions
-2. 运行 `Build iOS App` workflow
-3. 在 Artifacts 中下载 `MapReplacer-App`（内含 `.ipa`）
+---
 
-### 本地编译（macOS）
+## 五、想换宿主 App？
 
-```bash
-export THEOS=~/theos
-git clone --recursive https://github.com/theos/theos.git $THEOS
-
-make clean
-make package FINALPACKAGE=1
-# 产物位于 packages/*.ipa
-```
-
-## 安装方法
-
-### 方法 1：TrollStore（推荐）
-直接将 `.ipa` 用 TrollStore 安装。entitlements 已包含 `platform-application`、`no-container` 等 TrollStore 扩展权限。
-
-### 方法 2：自签名
-- 使用 Sideloadly / TrollStore Helper / 爱思助手 / AltStore 等重签后安装
-- 自签环境下无 `platform-application` 权限，应用只能操作自身沙箱 Documents
-
-## 权限说明
-
-| 权限 | 作用 |
-|---|---|
-| `get-task-allow` | 允许调试 |
-| `platform-application` | TrollStore 专用：提升为平台应用 |
-| `com.apple.private.security.no-container` | 脱离沙箱容器 |
-| `com.apple.private.security.no-sandbox` | 禁用沙箱 |
-| `com.apple.private.skip-library-validation` | 跳过库验证 |
-
-## 许可证
-
-MIT License
+修改 [`PersonalCenterUI.plist`](./PersonalCenterUI.plist) 里的 `Bundles` 为目标 App 的 Bundle ID，
+同时 [`Makefile`](./Makefile) 里的 `INSTALL_TARGET_PROCESSES` 改为对应进程名即可。
+dylib 注入到的目标 App 必须是 **未加密的 Mach-O**（App Store 的 IPA 需先砸壳）。

@@ -1,0 +1,449 @@
+//
+//  PCMainViewController.m
+//  PersonalCenterUI
+//
+//  wy.html 像素级 1:1 还原：
+//    - 顶部渐变标题栏（56pt，#1677ff → #0958d9）
+//    - 4 张白色圆角 20 菜单卡片，margin-bottom 16
+//    - 一级行高 60，左侧 32x32 图标（圆角 10），右侧 ⌄ 箭头（展开旋转 180°）
+//    - 二级行高 14/24 padding，底部 1pt 分隔；右侧 #00b96b 圆角"确定"按钮
+//    - 点击"确定" → 弹出居中进度弹窗并触发 PCPakDownloader 下载
+//
+
+#import "PCMainViewController.h"
+#import "PCDownloadPopView.h"
+#import "PCPakDownloader.h"
+#import <objc/runtime.h>
+
+#pragma mark - Colors
+
+static inline UIColor *HEX(uint32_t rgb) {
+    return [UIColor colorWithRed:((rgb >> 16) & 0xFF)/255.0
+                           green:((rgb >>  8) & 0xFF)/255.0
+                            blue:( rgb        & 0xFF)/255.0
+                           alpha:1.0];
+}
+static inline UIColor *HEXA(uint32_t rgb, CGFloat a) {
+    return [UIColor colorWithRed:((rgb >> 16) & 0xFF)/255.0
+                           green:((rgb >>  8) & 0xFF)/255.0
+                            blue:( rgb        & 0xFF)/255.0
+                           alpha:a];
+}
+
+#pragma mark - MenuCard View
+
+@interface PCMenuCardView : UIView
+@property (nonatomic, strong) UIView     *firstRow;      // .menu-first
+@property (nonatomic, strong) UIView     *iconBox;       // .icon
+@property (nonatomic, strong) UILabel    *iconLabel;     // icon emoji
+@property (nonatomic, strong) UILabel    *titleLabel;    // .title
+@property (nonatomic, strong) UILabel    *arrowLabel;    // .arrow
+@property (nonatomic, strong) UIView     *secondWrap;    // .menu-second
+@property (nonatomic, strong) NSArray<UIView *>  *subItems;
+@property (nonatomic, assign) BOOL        expanded;
+@property (nonatomic, copy)   void (^onSubItemTap)(NSString *subTitle);
+- (void)setCardTitle:(NSString *)title
+            iconText:(NSString *)iconText
+           iconColor:(UIColor *)iconColor
+            subItems:(NSArray<NSString *> *)items;
+- (CGFloat)desiredHeight;
+@end
+
+@implementation PCMenuCardView
+
+- (instancetype)init {
+    if ((self = [super init])) {
+        self.backgroundColor = [UIColor whiteColor];
+        self.layer.cornerRadius  = 20.0;
+        self.layer.masksToBounds = YES;     // overflow: hidden
+        // 卡片阴影由 wrapper container 提供 —— UIView 自身 masksToBounds=YES 会裁掉阴影
+        [self buildUI];
+    }
+    return self;
+}
+
+- (void)buildUI {
+    // 一级行
+    self.firstRow = [[UIView alloc] init];
+    self.firstRow.backgroundColor = [UIColor whiteColor];
+    self.firstRow.userInteractionEnabled = YES;
+    [self addSubview:self.firstRow];
+
+    UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc]
+        initWithTarget:self action:@selector(toggle)];
+    [self.firstRow addGestureRecognizer:tap];
+
+    // 图标色块
+    self.iconBox = [[UIView alloc] init];
+    self.iconBox.layer.cornerRadius  = 10.0;
+    self.iconBox.layer.masksToBounds = YES;
+    [self.firstRow addSubview:self.iconBox];
+
+    self.iconLabel = [[UILabel alloc] init];
+    self.iconLabel.textAlignment = NSTextAlignmentCenter;
+    self.iconLabel.font = [UIFont systemFontOfSize:16];
+    self.iconLabel.textColor = [UIColor whiteColor];
+    [self.iconBox addSubview:self.iconLabel];
+
+    // 标题
+    self.titleLabel = [[UILabel alloc] init];
+    self.titleLabel.textColor = HEX(0x333333);
+    self.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
+    [self.firstRow addSubview:self.titleLabel];
+
+    // 箭头
+    self.arrowLabel = [[UILabel alloc] init];
+    self.arrowLabel.text = @"⌄";
+    self.arrowLabel.textColor = HEX(0x999999);
+    self.arrowLabel.font = [UIFont systemFontOfSize:20];
+    self.arrowLabel.textAlignment = NSTextAlignmentCenter;
+    [self.firstRow addSubview:self.arrowLabel];
+
+    // 二级容器
+    self.secondWrap = [[UIView alloc] init];
+    self.secondWrap.backgroundColor = HEX(0xFAFBFC);
+    self.secondWrap.clipsToBounds = YES;
+    [self addSubview:self.secondWrap];
+
+    // 顶部 1pt 分割线
+    UIView *topLine = [[UIView alloc] init];
+    topLine.backgroundColor = HEX(0xF0F2F5);
+    topLine.tag = 9001;
+    [self.secondWrap addSubview:topLine];
+}
+
+- (void)setCardTitle:(NSString *)title
+            iconText:(NSString *)iconText
+           iconColor:(UIColor *)iconColor
+            subItems:(NSArray<NSString *> *)items {
+    self.titleLabel.text  = title;
+    self.iconLabel.text   = iconText;
+    self.iconBox.backgroundColor = iconColor;
+
+    // 清掉旧的 sub items
+    for (UIView *v in self.subItems) [v removeFromSuperview];
+
+    NSMutableArray *arr = [NSMutableArray array];
+    for (NSInteger i = 0; i < items.count; i++) {
+        NSString *name = items[i];
+        UIView *row = [[UIView alloc] init];
+        row.backgroundColor = [UIColor clearColor];
+
+        UILabel *lbl = [[UILabel alloc] init];
+        lbl.text = name;
+        lbl.textColor = HEX(0x555555);
+        lbl.font = [UIFont systemFontOfSize:14];
+        lbl.tag = 1;
+        [row addSubview:lbl];
+
+        UIButton *btn = [UIButton buttonWithType:UIButtonTypeCustom];
+        btn.backgroundColor = HEX(0x00B96B);
+        btn.layer.cornerRadius = 14.0;          // 足够大以圆形两端
+        btn.layer.masksToBounds = YES;
+        [btn setTitle:@"确定" forState:UIControlStateNormal];
+        [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+        btn.titleLabel.font = [UIFont systemFontOfSize:12];
+        btn.contentEdgeInsets = UIEdgeInsetsMake(4, 12, 4, 12);
+        btn.tag = 2;
+        objc_setAssociatedObject(btn, @selector(tag), name, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [btn addTarget:self action:@selector(onSubItemButtonTap:)
+       forControlEvents:UIControlEventTouchUpInside];
+        [row addSubview:btn];
+
+        // 底部 1pt 分隔线（最后一项不画）
+        if (i < items.count - 1) {
+            UIView *bottom = [[UIView alloc] init];
+            bottom.backgroundColor = HEX(0xF0F2F5);
+            bottom.tag = 3;
+            [row addSubview:bottom];
+        }
+        [self.secondWrap addSubview:row];
+        [arr addObject:row];
+    }
+    self.subItems = arr;
+    [self setNeedsLayout];
+}
+
+- (void)onSubItemButtonTap:(UIButton *)btn {
+    NSString *name = objc_getAssociatedObject(btn, @selector(tag));
+    if (self.onSubItemTap) self.onSubItemTap(name ?: @"");
+    // 按下视觉反馈
+    [UIView animateWithDuration:0.12 animations:^{
+        btn.transform = CGAffineTransformMakeScale(1.05, 1.05);
+        btn.backgroundColor = HEX(0x00A85C);
+    } completion:^(BOOL f) {
+        [UIView animateWithDuration:0.12 animations:^{
+            btn.transform = CGAffineTransformIdentity;
+            btn.backgroundColor = HEX(0x00B96B);
+        }];
+    }];
+}
+
+- (CGFloat)subItemRowHeight { return 48.0; /* 14*2 + 文字 20 */ }
+- (CGFloat)secondWrapHeight {
+    if (!self.expanded) return 0;
+    return [self subItemRowHeight] * self.subItems.count + 1.0; // +topLine
+}
+- (CGFloat)desiredHeight {
+    return 60.0 + [self secondWrapHeight];
+}
+
+- (void)toggle {
+    self.expanded = !self.expanded;
+    [UIView animateWithDuration:0.45 delay:0
+                        options:UIViewAnimationOptionCurveEaseInOut
+                     animations:^{
+        // 箭头旋转 + 颜色
+        self.arrowLabel.transform = self.expanded
+            ? CGAffineTransformMakeRotation((CGFloat)M_PI)
+            : CGAffineTransformIdentity;
+        self.arrowLabel.textColor = self.expanded ? HEX(0x1677FF) : HEX(0x999999);
+
+        // 触发父视图重布局（卡片会改高度 → 主容器会重排）
+        [self invalidateIntrinsicContentSize];
+        if ([self.superview respondsToSelector:@selector(setNeedsLayout)]) {
+            [self.superview setNeedsLayout];
+            [self.superview layoutIfNeeded];
+        }
+    } completion:nil];
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    CGFloat W = self.bounds.size.width;
+
+    // 一级行
+    self.firstRow.frame = CGRectMake(0, 0, W, 60);
+
+    // 图标 32x32 + left padding 20
+    self.iconBox.frame = CGRectMake(20, (60-32)/2.0, 32, 32);
+    self.iconLabel.frame = self.iconBox.bounds;
+
+    // 箭头 right 20, 尺寸 20
+    self.arrowLabel.frame = CGRectMake(W - 20 - 20, (60-20)/2.0, 20, 20);
+
+    // 标题：图标右 + gap 12
+    CGFloat titleX = 20 + 32 + 12;
+    self.titleLabel.frame = CGRectMake(titleX, 0,
+                                       W - titleX - 40 - 12, 60);
+
+    // 二级容器
+    CGFloat h = [self secondWrapHeight];
+    self.secondWrap.frame = CGRectMake(0, 60, W, h);
+    UIView *topLine = [self.secondWrap viewWithTag:9001];
+    topLine.frame = CGRectMake(0, 0, W, 1);
+
+    CGFloat y = 1;
+    CGFloat rowH = [self subItemRowHeight];
+    for (UIView *row in self.subItems) {
+        row.frame = CGRectMake(0, y, W, rowH);
+        y += rowH;
+        UILabel *lbl = [row viewWithTag:1];
+        UIButton *btn = (UIButton *)[row viewWithTag:2];
+        UIView *bottom = [row viewWithTag:3];
+
+        lbl.frame = CGRectMake(24, 0, W - 24 - 70 - 24, rowH);
+
+        CGSize btnSize = [btn sizeThatFits:CGSizeMake(CGFLOAT_MAX, CGFLOAT_MAX)];
+        CGFloat bw = MAX(btnSize.width, 56);
+        CGFloat bh = MAX(btnSize.height, 28);
+        btn.frame = CGRectMake(W - 24 - bw, (rowH - bh)/2.0, bw, bh);
+
+        if (bottom) bottom.frame = CGRectMake(24, rowH - 1, W - 48, 1);
+    }
+}
+
+@end
+
+#pragma mark - Shadow container
+
+@interface PCShadowContainer : UIView
+@end
+@implementation PCShadowContainer
+- (instancetype)init {
+    if ((self = [super init])) {
+        self.backgroundColor = [UIColor clearColor];
+        self.layer.shadowColor   = [UIColor blackColor].CGColor;
+        self.layer.shadowOpacity = 0.06;
+        self.layer.shadowRadius  = 9.0;      // 对应 CSS blur 18
+        self.layer.shadowOffset  = CGSizeMake(0, 4);
+        self.layer.masksToBounds = NO;
+    }
+    return self;
+}
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    // 阴影 path 提效
+    self.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:self.bounds
+                                                       cornerRadius:20.0].CGPath;
+    for (UIView *sub in self.subviews) sub.frame = self.bounds;
+}
+@end
+
+#pragma mark - Main VC
+
+@interface PCMainViewController ()
+@property (nonatomic, strong) UIView              *headerBar;        // .app-header
+@property (nonatomic, strong) CAGradientLayer     *headerGradient;
+@property (nonatomic, strong) UILabel             *headerTitle;
+@property (nonatomic, strong) UIScrollView        *scroll;           // .main-wrap
+@property (nonatomic, strong) NSMutableArray<UIView *>     *cardWrappers;  // shadow containers
+@property (nonatomic, strong) NSMutableArray<PCMenuCardView *> *cards;
+@property (nonatomic, strong) PCDownloadPopView   *pop;
+@end
+
+@implementation PCMainViewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.view.backgroundColor = HEX(0xF6F8FA);
+    [self buildHeader];
+    [self buildScroll];
+    [self buildCards];
+    self.pop = [[PCDownloadPopView alloc] init];
+}
+
+- (BOOL)prefersStatusBarHidden { return NO; }
+- (UIStatusBarStyle)preferredStatusBarStyle { return UIStatusBarStyleLightContent; }
+
+#pragma mark - UI
+
+- (void)buildHeader {
+    self.headerBar = [[UIView alloc] init];
+    self.headerBar.clipsToBounds = NO;
+    // 阴影 0 2 12 rgba(9,88,217,0.18)
+    self.headerBar.layer.shadowColor   = HEX(0x0958D9).CGColor;
+    self.headerBar.layer.shadowOpacity = 0.18;
+    self.headerBar.layer.shadowRadius  = 6.0;
+    self.headerBar.layer.shadowOffset  = CGSizeMake(0, 2);
+    [self.view addSubview:self.headerBar];
+
+    self.headerGradient = [CAGradientLayer layer];
+    // 135deg 渐变：start 左上、end 右下
+    self.headerGradient.colors = @[ (id)HEX(0x1677FF).CGColor,
+                                    (id)HEX(0x0958D9).CGColor ];
+    self.headerGradient.startPoint = CGPointMake(0, 0);
+    self.headerGradient.endPoint   = CGPointMake(1, 1);
+    [self.headerBar.layer addSublayer:self.headerGradient];
+
+    self.headerTitle = [[UILabel alloc] init];
+    self.headerTitle.text = @"个人中心 · 功能菜单";
+    self.headerTitle.textColor = [UIColor whiteColor];
+    self.headerTitle.font = [UIFont systemFontOfSize:18 weight:UIFontWeightSemibold];
+    self.headerTitle.textAlignment = NSTextAlignmentCenter;
+    [self.headerBar addSubview:self.headerTitle];
+}
+
+- (void)buildScroll {
+    self.scroll = [[UIScrollView alloc] init];
+    self.scroll.backgroundColor = HEX(0xF6F8FA);
+    self.scroll.alwaysBounceVertical = YES;
+    self.scroll.showsVerticalScrollIndicator = NO;
+    if (@available(iOS 11.0, *)) {
+        self.scroll.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+    }
+    [self.view addSubview:self.scroll];
+}
+
+- (void)buildCards {
+    self.cardWrappers = [NSMutableArray array];
+    self.cards = [NSMutableArray array];
+
+    // 严格按 wy.html 顺序 & 内容
+    NSArray *cfg = @[
+        @{ @"title":@"订单管理",   @"icon":@"📋", @"color":HEX(0x1677FF),
+           @"items":@[@"全部订单", @"待付款订单", @"已发货物流", @"售后退款记录"] },
+        @{ @"title":@"个人资料",   @"icon":@"👤", @"color":HEX(0x00B96B),
+           @"items":@[@"修改头像昵称", @"绑定手机号", @"实名认证", @"收货地址管理"] },
+        @{ @"title":@"系统设置",   @"icon":@"⚙️", @"color":HEX(0xFF7D00),
+           @"items":@[@"消息通知开关", @"隐私权限管理", @"清除缓存数据", @"关于当前版本"] },
+        @{ @"title":@"帮助与客服", @"icon":@"💡", @"color":HEX(0x2A3342),
+           @"items":@[@"常见问题解答", @"在线人工客服", @"意见反馈提交"] },
+    ];
+    __weak typeof(self) weakSelf = self;
+    for (NSDictionary *c in cfg) {
+        PCShadowContainer *wrap = [[PCShadowContainer alloc] init];
+        PCMenuCardView *card = [[PCMenuCardView alloc] init];
+        [card setCardTitle:c[@"title"]
+                  iconText:c[@"icon"]
+                 iconColor:c[@"color"]
+                  subItems:c[@"items"]];
+        card.onSubItemTap = ^(NSString *name) {
+            [weakSelf handleSubItemTap:name];
+        };
+        [wrap addSubview:card];
+        [self.scroll addSubview:wrap];
+        [self.cardWrappers addObject:wrap];
+        [self.cards addObject:card];
+    }
+}
+
+#pragma mark - Layout
+
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+
+    CGFloat W = self.view.bounds.size.width;
+    CGFloat H = self.view.bounds.size.height;
+
+    // 状态栏 + 56 pt 标题栏
+    CGFloat statusH = 0;
+    if (@available(iOS 11.0, *)) statusH = self.view.safeAreaInsets.top;
+    if (statusH < 20) statusH = 20;
+    CGFloat headerH = statusH + 56;
+    self.headerBar.frame = CGRectMake(0, 0, W, headerH);
+    self.headerGradient.frame = self.headerBar.bounds;
+    self.headerTitle.frame = CGRectMake(0, statusH, W, 56);
+
+    // margin-top 68 ≈ header 56 + gap 12；为了对齐 wy.html 的视觉，
+    // 这里保持 gap 12，因此 scroll 从 headerH 开始
+    CGFloat scrollY = headerH;
+    self.scroll.frame = CGRectMake(0, scrollY, W, H - scrollY);
+
+    // padding 14 / padding-bottom 30；margin-bottom 16
+    CGFloat pad = 14;
+    CGFloat gapTop = 12; // 对应 wy.html main-wrap margin-top 比 header 多出的 12
+    CGFloat y = gapTop;
+    for (NSInteger i = 0; i < self.cards.count; i++) {
+        PCMenuCardView *card = self.cards[i];
+        UIView *wrap = self.cardWrappers[i];
+        CGFloat ch = [card desiredHeight];
+        wrap.frame = CGRectMake(pad, y, W - pad * 2, ch);
+        y += ch + 16; // margin-bottom
+    }
+    y = y - 16 + 40 /* safe-bottom 40 */ + 30 /* padding-bottom 30 */;
+    self.scroll.contentSize = CGSizeMake(W, y);
+}
+
+#pragma mark - Actions
+
+- (void)handleSubItemTap:(NSString *)name {
+    NSString *title = [NSString stringWithFormat:@"正在执行：%@", name];
+    [self.pop showInView:self.view title:title];
+
+    // 真实下载 pak 到自定义路径（逻辑沿用 yy1.ipa 分析报告）
+    [[PCPakDownloader sharedDownloader] startDownloadWithTitle:name
+        progress:^(double progress, int64_t received, int64_t total) {
+            NSString *tip = nil;
+            double p100 = progress * 100;
+            if (p100 >= 99.5)     tip = @"最后校验中...";
+            else if (p100 > 40)   tip = [NSString stringWithFormat:@"拉取核心资源... (%lld / %lld)",
+                                         (long long)received, (long long)total];
+            else                  tip = @"准备初始化...";
+            [self.pop updateProgress:progress tip:tip];
+        } completion:^(BOOL success, NSString * _Nullable finalPath, NSError * _Nullable error) {
+            if (success) {
+                [self.pop updateProgress:1.0 tip:@"操作完成！"];
+                // 1 秒后自动关闭
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
+                               dispatch_get_main_queue(), ^{
+                    [self.pop dismiss];
+                });
+            } else {
+                NSString *msg = error.localizedDescription ?: @"未知错误";
+                [self.pop updateProgress:0.0 tip:[NSString stringWithFormat:@"失败：%@", msg]];
+            }
+        }];
+}
+
+@end
