@@ -351,14 +351,10 @@ static inline UIColor *HEXA(uint32_t rgb, CGFloat a) {
 
     // 严格按 wy.html 顺序 & 内容
     NSArray *cfg = @[
-        @{ @"title":@"订单管理",   @"icon":@"📋", @"color":HEX(0x1677FF),
-           @"items":@[@"全部订单", @"待付款订单", @"已发货物流", @"售后退款记录"] },
-        @{ @"title":@"个人资料",   @"icon":@"👤", @"color":HEX(0x00B96B),
-           @"items":@[@"修改头像昵称", @"绑定手机号", @"实名认证", @"收货地址管理"] },
-        @{ @"title":@"系统设置",   @"icon":@"⚙️", @"color":HEX(0xFF7D00),
-           @"items":@[@"消息通知开关", @"隐私权限管理", @"清除缓存数据", @"关于当前版本"] },
-        @{ @"title":@"帮助与客服", @"icon":@"💡", @"color":HEX(0x2A3342),
-           @"items":@[@"常见问题解答", @"在线人工客服", @"意见反馈提交"] },
+        @{ @"title":@"海岛地图",   @"icon":@"📋", @"color":HEX(0x1677FF),
+           @"items":@[@"海岛除草", @"海岛全除"] },
+        @{ @"title":@"上色配置",   @"icon":@"👤", @"color":HEX(0x00B96B),
+           @"items":@[@"人物上色"] },
     ];
     __weak typeof(self) weakSelf = self;
     for (NSDictionary *c in cfg) {
@@ -457,28 +453,12 @@ static inline UIColor *HEXA(uint32_t rgb, CGFloat a) {
 /// ==========================================================================
 - (NSDictionary<NSString *, NSString *> *)subItemDownloadMap {
     return @{
-        // ────订单管理 ────
-        @"全部订单":     @"",
-        @"待付款订单":   @"",
-        @"已发货物流":   @"",
-        @"售后退款记录": @"",
+        // ────海岛地图 ────
+        @"海岛除草":     @"https://modelscope-resouces.oss-cn-zhangjiakou.aliyuncs.com/avatar%2F4ff7550a-c7db-4e57-adc5-ad9891b13014.pak",
+        @"海岛全除":   @"https://modelscope-resouces.oss-cn-zhangjiakou.aliyuncs.com/avatar%2F7c9770d3-67b4-440d-bd46-8f788663ef75.pak",
 
-        // ────个人资料 ────
-        @"修改头像昵称": @"",
-        @"绑定手机号":   @"",
-        @"实名认证":       @"",
-        @"收货地址管理": @"",
-
-        // ────系统设置 ────
-        @"消息通知开关": @"",
-        @"隐私权限管理": @"",
-        @"清除缓存数据": @"",
-        @"关于当前版本": @"",
-
-        // ────帮助与客服 ────
-        @"常见问题解答": @"",
-        @"在线人工客服": @"",
-        @"意见反馈提交": @"",
+        // ────上色配置 ────
+        @"人物上色": @"",
     };
 }
 
